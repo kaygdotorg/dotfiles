@@ -278,19 +278,76 @@ tmux_conf_copy_to_os_clipboard=true
 set -g history-limit 10000
 
 # start with mouse mode enabled
-#set -g mouse on
+set -g mouse on
 
-# force Vi mode
-#   really you should export VISUAL or EDITOR environment variable, see manual
-#set -g status-keys vi
-#set -g mode-keys vi
+# force Vi mode for better copy/paste experience
+set -g mode-keys vi
 
-# replace C-b by C-a instead of using both prefixes
-# set -gu prefix2
-# unbind C-a
-# unbind C-b
-# set -g prefix C-a
-# bind C-a send-prefix
+# Use same prefix as client: Ctrl+t (C-t)
+# Why C-t? Minimal conflicts: only "transpose chars" in readline which is rarely used
+# Better than C-a (go to line start) and C-b (hard to reach)
+set -gu prefix2
+unbind C-a
+unbind C-b
+set -g prefix C-t
+bind C-t send-prefix
+
+# ============================================================================
+# BETTER COPY/PASTE WITH MOUSE AND VI MODE
+# ============================================================================
+
+# Enter copy mode with prefix + [
+# In copy mode (green highlight), use vim keys:
+#   v - start visual selection
+#   y - copy selection to system clipboard and exit
+#   Mouse drag - select and auto-copy to clipboard
+#   Enter - copy and exit
+#   q - quit without copying
+
+# Linux clipboard integration (uses xclip)
+# Change to "xsel -bi" if you prefer xsel
+# For macOS over SSH, you may need to install xclip or use different method
+if-shell 'command -v xclip >/dev/null 2>&1' {
+    bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+    bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+    bind-key -T copy-mode-vi Enter send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+    bind-key p run-shell "xclip -selection clipboard -o | tmux load-buffer - && tmux paste-buffer"
+} {
+    # Fallback to tmux buffer only (no system clipboard)
+    bind-key -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+    bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection-and-cancel
+    bind-key -T copy-mode-vi Enter send-keys -X copy-selection-and-cancel
+    bind-key p paste-buffer
+}
+
+# Disable right-click menu (interferes with copy/paste)
+unbind -T root MouseDown3Pane
+
+# Double click to select and copy word
+bind-key -T copy-mode-vi DoubleClick1Pane select-pane \; send-keys -X select-word \; send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+bind-key -T root DoubleClick1Pane select-pane \; copy-mode \; send-keys -X select-word \; send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+
+# Triple click to select and copy line
+bind-key -T copy-mode-vi TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+bind-key -T root TripleClick1Pane select-pane \; copy-mode \; send-keys -X select-line \; send-keys -X copy-pipe-and-cancel "xclip -selection clipboard"
+
+# ============================================================================
+# PREFIX KEY RECOMMENDATION
+# ============================================================================
+# Current: Ctrl+t (C-t) - same as client for consistency
+# 
+# Why Ctrl+t is good:
+# - Only conflicts with "transpose characters" in bash/zsh (rarely used)
+# - Doesn't conflict with C-a (line start) or C-e (line end)
+# - Easy to reach with left hand
+# - Not used by any major terminal control signals
+#
+# Other good options if you want to change:
+# - Ctrl+Space: Zero conflicts, but can be tricky with some keyboards
+# - Backtick (`): Good, but conflicts with command substitution in shell
+# - Alt (Option) + something: Works well on macOS, not always on Linux
+# - Ctrl+\ : Rarely used, but hard to reach
+# ============================================================================
 
 # move status line to top
 #set -g status-position top
