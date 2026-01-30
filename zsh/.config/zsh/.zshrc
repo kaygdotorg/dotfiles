@@ -40,10 +40,8 @@ fi
 # you get nested sessions which are confusing and hard to exit.
 # This prevents auto-starting tmux if we're already inside one.
 # ============================================================================
-if [[ -n "${TMUX}" ]]; then
-    # We're already in a tmux session - don't auto-start another
-    :
-elif [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
+# Only auto-start tmux in interactive shells (not iOS/Shellfish scp, etc.)
+if [[ $- == *i* ]] && [[ -z "${TMUX}" ]] && [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
     # iTerm2 Control Mode: Uses native iTerm2 tmux integration
     # -CC flag tells tmux to run in "control mode" where iTerm2 handles the UI
     # Benefits: Native scrollback, mouse support, copy/paste, better rendering
@@ -245,9 +243,23 @@ if [[ -f "$HOME/.atuin/bin/env" ]]; then
     eval "$(atuin init zsh)"
 fi
 
-# shellfish (if installed)
-if [[ -f "${HOME}/.shellfishrc" ]]; then
+# shellfish (if installed) - only for interactive shells
+if [[ $- == *i* ]] && [[ -f "${HOME}/.shellfishrc" ]]; then
+    # When inside tmux, SSH_TTY points to the parent SSH session's tty
+    # which is not writable from tmux panes, causing "permission denied" errors.
+    # Unset it so shellfish falls back to stdout instead.
+    if [[ -n "${TMUX}" ]]; then
+        unset SSH_TTY
+    fi
     source "${HOME}/.shellfishrc"
+    # Suppress "Standard output is not tty" errors from ios_sequence
+    # by renaming the original function and creating a silent wrapper
+    if typeset -f ios_sequence >/dev/null 2>&1; then
+        functions[_ios_sequence_orig]=$functions[ios_sequence]
+        ios_sequence() {
+            _ios_sequence_orig "$@" 2>/dev/null
+        }
+    fi
 fi
 
 # ============================================================================
