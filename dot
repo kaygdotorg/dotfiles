@@ -198,6 +198,26 @@ update_zsh() {
     done
 }
 
+# ssh
+ssh_src="${script_path}/.ssh"
+ssh_dest="${HOME}/.ssh"
+
+setup_ssh() {
+    # create ~/.ssh directory with correct permissions
+    printf '%s' "Creating ${ssh_dest} directory"
+    run_cmd mkdir -p "${ssh_dest}" && chmod 700 "${ssh_dest}"
+
+    # link ssh config
+    if [ -f "${ssh_src}/config" ]; then
+        printf '%s' "Linking SSH config"
+        run_cmd ln -sf "${ssh_src}/config" "${ssh_dest}/config" && chmod 600 "${ssh_dest}/config"
+    else
+        printf '%s\n' "Warning: ${ssh_src}/config does not exist. Skipping config setup."
+    fi
+
+    printf '%s\n' "SSH setup complete. Make sure your SSH keys are in ${ssh_dest}/"
+}
+
 main() {
     # check if running in termux
     if check_if_installed termux-setup-storage; then
