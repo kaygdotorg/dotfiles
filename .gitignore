@@ -1,0 +1,14 @@
+# SSH private keys — never commit these
+.ssh/id_*
+.ssh/github
+.ssh/git.kayg.org
+.ssh/known_hosts
+.ssh/authorized_keys
+*.pem
+*.key
+
+# macOS
+.DS_Store
+
+# Editor / tool state
+.claude/

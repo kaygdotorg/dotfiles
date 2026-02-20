@@ -123,6 +123,9 @@ function functionKeyLayer() {
     ])
 }
 
+// mediaLayer is intentionally excluded from writeToProfile.
+// hyper+m is not registered, so this layer is dormant.
+// Keeping the definition here for reference / future re-activation.
 function mediaLayer() {
   return hyperLayer('m')
     .notification()

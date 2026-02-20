@@ -15,14 +15,14 @@ if [[ "${OSTYPE}" == "darwin"* && -d "/opt/homebrew/bin" ]]; then
     export PATH="/opt/homebrew/bin:${PATH}"
 fi
 
-# Spicetify (Spotify CLI) - only on macOS and only if installed
-if [[ -d "/Users/kayg/.spicetify" ]]; then
-    export PATH="/Users/kayg/.spicetify:${PATH}"
+# Spicetify (Spotify CLI) - only if installed
+if [[ -d "${HOME}/.spicetify" ]]; then
+    export PATH="${HOME}/.spicetify:${PATH}"
 fi
 
 # opencode - only if installed
-if [[ -d "/home/kayg/.opencode/bin" ]]; then
-    export PATH="/home/kayg/.opencode/bin:${PATH}"
+if [[ -d "${HOME}/.opencode/bin" ]]; then
+    export PATH="${HOME}/.opencode/bin:${PATH}"
 fi
 
 # --- Go Configuration ---
@@ -93,6 +93,7 @@ plugins=(
     git           # Git aliases and functions
     vi-mode       # Vim-style line editing (Esc to enter normal mode)
     z             # Jump to recent directories: `z <pattern>`
+    zsh-completions            # Additional completion definitions
     zsh-syntax-highlighting    # Real-time command syntax highlighting
     zsh-autosuggestions        # Suggest commands from history
     history-substring-search   # Search history with Up/Down arrows
@@ -119,12 +120,6 @@ source "${ZSH}/oh-my-zsh.sh"
 # Usage: check_if_installed <command>
 check_if_installed() {
     command -v "${1}" 2>/dev/null 1>&2;
-}
-
-# wttr(): Show weather for a location (defaults to Delhi)
-# Usage: wttr [city]
-wttr() {
-    curl https://wttr.in/${1:-Delhi}
 }
 
 # ynab_token(): Retrieve YNAB API token from 1Password
@@ -218,38 +213,21 @@ fi
 
 # nvm (Node Version Manager) - LAZY LOADING for performance
 # ============================================================================
-# Why lazy load? Sourcing nvm init adds 200-500ms to shell startup time.
-# Instead, we create wrapper functions that load nvm only when needed.
+# Why lazy load? Sourcing nvm.sh adds 200-500ms to every shell startup.
+# Instead, stub functions load nvm on first use then call through to the real
+# command. _nvm_load() is a shared helper so the stubs stay terse.
 # ============================================================================
-if [[ -f /usr/share/nvm/init-nvm.sh ]]; then
-    # Store the actual init script path
-    export NVM_DIR="${HOME}/.nvm"
-    
-    # Wrapper function that loads nvm on first use
-    nvm() {
-        unset -f nvm node npm npx 2>/dev/null
-        source /usr/share/nvm/init-nvm.sh
-        nvm "$@"
+export NVM_DIR="${HOME}/.nvm"
+if [[ -f "${NVM_DIR}/nvm.sh" ]]; then
+    _nvm_load() {
+        unset -f nvm node npm npx _nvm_load 2>/dev/null
+        source "${NVM_DIR}/nvm.sh"
+        [[ -f "${NVM_DIR}/bash_completion" ]] && source "${NVM_DIR}/bash_completion"
     }
-    
-    # Create wrappers for common node commands
-    node() {
-        unset -f nvm node npm npx 2>/dev/null
-        source /usr/share/nvm/init-nvm.sh
-        node "$@"
-    }
-    
-    npm() {
-        unset -f nvm node npm npx 2>/dev/null
-        source /usr/share/nvm/init-nvm.sh
-        npm "$@"
-    }
-    
-    npx() {
-        unset -f nvm node npm npx 2>/dev/null
-        source /usr/share/nvm/init-nvm.sh
-        npx "$@"
-    }
+    nvm()  { _nvm_load && nvm  "$@"; }
+    node() { _nvm_load && node "$@"; }
+    npm()  { _nvm_load && npm  "$@"; }
+    npx()  { _nvm_load && npx  "$@"; }
 fi
 
 # Atuin (shell history with sync and search)
@@ -280,14 +258,10 @@ fi
 # ============================================================================
 # PROMPT CUSTOMIZATION
 # ============================================================================
-# To customize prompt, run `p10k configure` or edit ~/.config/zsh/.p10k.zsh
-if [[ -f ~/.config/zsh/.p10k.zsh ]]; then
-    source ~/.config/zsh/.p10k.zsh
+# To customize prompt, run `p10k configure` or edit ${ZDOTDIR}/.p10k.zsh
+if [[ -f "${ZDOTDIR}/.p10k.zsh" ]]; then
+    source "${ZDOTDIR}/.p10k.zsh"
 fi
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-
 # bun completions
-[ -s "/Users/kayg/.bun/_bun" ] && source "/Users/kayg/.bun/_bun"
+[ -s "${HOME}/.bun/_bun" ] && source "${HOME}/.bun/_bun"

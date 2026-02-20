@@ -125,19 +125,11 @@ setup_tmux() {
     printf '%s' "Cloning oh-my-tmux"
     run_cmd git clone "https://github.com/gpakosz/.tmux.git" "${tmux_dest}"
 
-    # My client devices include a Macbook Pro and an Android, if that's the case, set the prefix to CTRL + t, otherwise don't change anything.
-    # Use uname instead of OSTYPE (which is bash/zsh specific) for POSIX compatibility
-    uname_output=$(uname -s)
-    case "${uname_output}" in
-        Darwin*|*ndroid*)
-            printf '%s' "Detected a client, linking client configuration"
-            run_cmd ln -sf "${tmux_dest}/.tmux.conf" "${HOME}" && ln -sf "${tmux_src}/.tmux.conf.local.client" "${HOME}/.tmux.conf.local"
-            ;;
-        *)
-            printf '%s' "Detected a server, linking server configuration"
-            run_cmd ln -sf "${tmux_dest}/.tmux.conf" "${HOME}" && ln -sf "${tmux_src}/.tmux.conf.local.server" "${HOME}/.tmux.conf.local"
-            ;;
-    esac
+    printf '%s' "Linking tmux configuration"
+    run_cmd ln -sf "${tmux_dest}/.tmux.conf" "${HOME}" && ln -sf "${tmux_src}/.tmux.conf.local" "${HOME}/.tmux.conf.local"
+
+    printf '%s' "Installing tpm (tmux plugin manager)"
+    run_cmd git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.tmux/plugins/tpm"
 }
 
 update_tmux() {
@@ -190,11 +182,12 @@ setup_zsh() {
 
 update_zsh() {
     printf '%s' 'Updating oh-my-zsh'
-    run_cmd git -C "${zsh_dest_custom_plugins}/${plugin}" pull
+    run_cmd git -C "${zsh_dest_omz}" pull
 
-    printf '%s' 'Updating plugins'
+    printf '%s\n' 'Updating plugins'
     for plugin in "${zsh_dest_custom_plugins}"/*; do
-        run_cmd git -C "${zsh_dest_custom_plugins}/${plugin}" pull
+        printf '%s' "  Updating $(basename "${plugin}")"
+        run_cmd git -C "${plugin}" pull
     done
 }
 
