@@ -1,12 +1,7 @@
 # ============================================================================
-# PERFORMANCE: PATH must be set BEFORE p10k instant prompt
-# ============================================================================
-# Why: p10k instant prompt renders the prompt immediately while zsh initializes
-# in the background. If PATH isn't set first, p10k won't find custom tools
-# (like starship, custom git prompt tools, etc.) for the initial render.
+# PATH Configuration
 # ============================================================================
 
-# --- PATH Configuration ---
 # Base PATH: user local binaries take precedence
 export PATH="${HOME}/.local/bin:${PATH}"
 
@@ -53,22 +48,9 @@ if [[ $- == *i* ]] && [[ -z "${TMUX}" ]] && [[ -d "${HOME}/.config/tmux" && "$(c
 fi
 
 # ============================================================================
-# Powerlevel10k Instant Prompt
-# ============================================================================
-# This renders the prompt immediately while zsh continues loading in background.
-# Must stay near the top (after PATH), but before any console input might be needed.
-# ============================================================================
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
-
-# ============================================================================
 # Oh My Zsh Configuration
 # ============================================================================
 export ZSH="${ZDOTDIR}"
-
-# Set OMZ theme
-ZSH_THEME="powerlevel10k/powerlevel10k"
 
 # Save history at a custom location
 HISTFILE="${ZSH}/.zsh_history"
@@ -250,12 +232,28 @@ if [[ $- == *i* ]] && [[ -f "${HOME}/.shellfishrc" ]]; then
 fi
 
 # ============================================================================
-# PROMPT CUSTOMIZATION
+# PROMPT — Oh My Posh
 # ============================================================================
-# To customize prompt, run `p10k configure` or edit ${ZDOTDIR}/.p10k.zsh
-if [[ -f "${ZDOTDIR}/.p10k.zsh" ]]; then
-    source "${ZDOTDIR}/.p10k.zsh"
+if command -v oh-my-posh 2>/dev/null 1>&2; then
+    eval "$(oh-my-posh init zsh --config "${ZDOTDIR}/omp.yaml")"
 fi
+
+# ============================================================================
+# VI-MODE CURSOR SHAPE
+# ============================================================================
+# Beam cursor in insert mode, block cursor in normal mode.
+# This replaces p10k's vi-mode prompt character indicators.
+zle-keymap-select() {
+    case "${KEYMAP}" in
+        vicmd)      print -n '\e[2 q' ;; # block
+        viins|main) print -n '\e[6 q' ;; # beam
+    esac
+}
+zle -N zle-keymap-select
+
+# Reset to beam on each new prompt
+zle-line-init() { print -n '\e[6 q' }
+zle -N zle-line-init
 
 # bun completions
 [ -s "${HOME}/.bun/_bun" ] && source "${HOME}/.bun/_bun"

@@ -141,7 +141,6 @@ update_tmux() {
 zsh_src="${script_path}/zsh/.config/zsh"
 zsh_dest_zsh="${HOME}/.config/zsh"
 zsh_dest_omz="${zsh_dest_zsh}"
-zsh_dest_custom_themes="${HOME}/.config/zsh/custom/themes"
 zsh_dest_custom_plugins="${HOME}/.config/zsh/custom/plugins"
 zsh_plugins="
     https://github.com/zsh-users/zsh-autosuggestions
@@ -171,13 +170,13 @@ setup_zsh() {
         run_cmd git -C "${zsh_dest_custom_plugins}" clone "${plugin}"
     done
 
-    # installing powerlevel10k
-    printf '%s' 'Installing powerlevel10k'
-    run_cmd git -C "${zsh_dest_custom_themes}" clone --depth=1 https://github.com/romkatv/powerlevel10k.git
+    # install oh-my-posh
+    printf '%s' 'Installing oh-my-posh'
+    run_cmd curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin"
 
     # linking configuration
     printf '%s' 'Linking personal configuration'
-    run_cmd ln -sf "${zsh_src}/.zshrc" "${zsh_dest_zsh}"
+    run_cmd ln -sf "${zsh_src}/.zshrc" "${zsh_dest_zsh}" && ln -sf "${zsh_src}/omp.yaml" "${zsh_dest_zsh}"
 }
 
 update_zsh() {
@@ -189,6 +188,9 @@ update_zsh() {
         printf '%s' "  Updating $(basename "${plugin}")"
         run_cmd git -C "${plugin}" pull
     done
+
+    printf '%s' 'Updating oh-my-posh'
+    run_cmd curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin"
 }
 
 # ssh
