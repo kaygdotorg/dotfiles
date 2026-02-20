@@ -1,0 +1,332 @@
+# https://github.com/gpakosz/.tmux
+# (‑●‑●)> dual licensed under the WTFPL v2 license and the MIT license,
+#         without any warranty.
+#         Copyright 2012— Gregory Pakosz (@gpakosz).
+#
+# ─── oh-my-tmux mechanism notes ───────────────────────────────────────────────
+#
+# HOW tmux_conf_* VARIABLES WORK (important for future editors)
+#
+# oh-my-tmux has a dual-sourcing system for .tmux.conf.local:
+#
+#   1. tmux SOURCE (line 160 of .tmux.conf):
+#        run '"$TMUX_PROGRAM" source "$TMUX_CONF_LOCAL"'
+#      Processes standard tmux commands: set -g, bind, if-shell, etc.
+#      Lines like  tmux_conf_foo=bar  are treated as unknown tmux commands.
+#      These unknown "name=value" lines are what sets tmux_conf_* in the tmux
+#      GLOBAL environment at config-parse time (synchronously).
+#
+#   2. SHELL pipeline (line 161 of .tmux.conf):
+#        run 'cut -c3- "$TMUX_CONF" | sh -s _apply_configuration'
+#      Strips first 2 chars of the MAIN conf and runs it as shell, executing
+#      _apply_theme, _apply_bindings, etc. The shell inherits the tmux global
+#      environment, so tmux_conf_* vars set in step 1 are visible here via
+#      ${tmux_conf_foo:-default} patterns.
+#
+# KEY RULES:
+#   • tmux_conf_* vars MUST be at column 0 (no prefix) to be set synchronously
+#     during step 1. Setting them inside `if-shell` + `set-environment -g`
+#     does NOT work — the if-shell runs in a deferred `run` that races with
+#     _apply_configuration.
+#   • Shell `if`/`fi` blocks in this file cause "if-shell: too many arguments"
+#     because tmux aliases `if` → `if-shell`. Use tmux's `if-shell` command
+#     instead for tmux-level conditionals.
+#   • `if-shell` + `set-environment -g` is valid for runtime values (escape-
+#     time, status-interval) but NOT for tmux_conf_* theme vars.
+#   • Separator vars use ${var-} (no colon) so empty string IS respected.
+#     All other theme vars use ${var:-default}, so empty string falls back
+#     to the oh-my-tmux default.
+#
+# CATPPUCCIN MOCHA PALETTE (for reference)
+#   Base     #1e1e2e   Mantle   #181825   Crust    #11111b
+#   Surface0 #313244   Surface1 #45475a   Surface2 #585b70
+#   Overlay0 #6c7086   Overlay1 #7f849c   Overlay2 #9399b2
+#   Text     #cdd6f4   Subtext1 #bac2de   Subtext0 #a6adc8
+#   Mauve    #cba6f7   Blue     #89b4fa   Lavender #b4befe
+#   Yellow   #f9e2af   Peach    #fab387   Red      #f38ba8
+#   Green    #a6e3a1   Teal     #94e2d5   Sky      #89dceb
+#
+# FONT: Cascadia Code NF (Nerd Font), installed via:
+#   brew install --cask font-cascadia-code-nf
+#   iTerm2 → Profiles → Text → select "CaskaydiaCove Nerd Font"
+#
+# PILL RENDERING:
+#   Rounded caps use Nerd Font Powerline Extra glyphs \uE0B6 (left open)
+#   and \uE0B4 (right open). These are in the E0B4-E0B7 range — NOT in
+#   basic Powerline (E0B0-E0B3), so a Nerd Font (NF) is required.
+#   bg=default in status bar + transparent terminal = gradient halo on pill
+#   caps. Fix: iTerm2 Window → "Keep background colours opaque".
+#
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+# -- navigation ----------------------------------------------------------------
+
+# if you're running tmux within iTerm2
+#   - and tmux is 1.9 or 1.9a
+#   - and iTerm2 is configured to let option key act as +Esc
+#   - and iTerm2 is configured to send [1;9A -> [1;9D for option + arrow keys
+# then uncomment the following line to make Meta + arrow keys mapping work
+#set -ga terminal-overrides "*:kUP3=\e[1;9A,*:kDN3=\e[1;9B,*:kRIT3=\e[1;9C,*:kLFT3=\e[1;9D"
+
+
+# -- windows & pane creation ---------------------------------------------------
+
+tmux_conf_new_window_retain_current_path=false
+tmux_conf_new_pane_retain_current_path=true
+tmux_conf_new_pane_reconnect_ssh=true
+tmux_conf_new_session_prompt=true
+
+
+# -- display -------------------------------------------------------------------
+
+tmux_conf_theme_24b_colour=true
+
+tmux_conf_theme_window_fg='default'
+tmux_conf_theme_window_bg='default'
+
+tmux_conf_theme_highlight_focused_pane=false
+tmux_conf_theme_focused_pane_fg='default'
+tmux_conf_theme_focused_pane_bg='#0087d7'
+
+# fat borders: easier to tap in Termius on iOS, clearer on any screen
+tmux_conf_theme_pane_border_style=fat
+
+# catppuccin mocha pane borders
+tmux_conf_theme_pane_border='#313244'                   # surface0
+tmux_conf_theme_pane_active_border='#cba6f7'            # mauve
+tmux_conf_theme_pane_indicator='#cba6f7'
+tmux_conf_theme_pane_active_indicator='#cba6f7'
+
+# message / command prompt (catppuccin yellow)
+tmux_conf_theme_message_fg='#1e1e2e'
+tmux_conf_theme_message_bg='#f9e2af'
+tmux_conf_theme_message_attr='bold'
+tmux_conf_theme_message_command_fg='#f9e2af'
+tmux_conf_theme_message_command_bg='#1e1e2e'
+tmux_conf_theme_message_command_attr='bold'
+
+# copy/search mode
+tmux_conf_theme_mode_fg='#1e1e2e'
+tmux_conf_theme_mode_bg='#f9e2af'
+tmux_conf_theme_mode_attr='bold'
+
+# status bar base
+#
+# DESIGN DECISION — bg='default' (transparent) is intentional:
+#   bg='default' makes the status bar transparent (terminal wallpaper/blur
+#   shows through). This is the desired "floating pills on wallpaper" aesthetic.
+#
+#   Known trade-off: bg=default in format strings at pill boundaries means the
+#   gap between adjacent pills is also transparent. The Nerd Font rounded-cap
+#   glyphs (E0B4/E0B6) on each side of that gap appear as facing crescents
+#   because one side of each cap is pill-colored, the other is see-through.
+#   This is an inherent property of the floating-pill-on-transparency design
+#   and cannot be avoided without using a solid status bar background.
+#
+#   iTerm2 "Keep background colours opaque" does NOT fix this — it only
+#   affects the terminal's own background rendering, not tmux format attributes.
+#
+#   Alternative (no crescents): bg='#1e1e2e' everywhere fills gaps with
+#   Catppuccin Base, making proper pill caps but creating a solid dark strip.
+#   User explicitly chose transparent bg over crescent-free rendering.
+tmux_conf_theme_status_fg='#cdd6f4'
+tmux_conf_theme_status_bg='default'
+tmux_conf_theme_status_attr='none'
+
+tmux_conf_theme_terminal_title='#h ◆ #S ● #I #W'
+
+# window activity / bell
+tmux_conf_theme_window_status_activity_fg='default'
+tmux_conf_theme_window_status_activity_bg='default'
+tmux_conf_theme_window_status_activity_attr='underscore'
+
+tmux_conf_theme_window_status_bell_fg='#f38ba8'
+tmux_conf_theme_window_status_bell_bg='default'
+tmux_conf_theme_window_status_bell_attr='blink,bold'
+
+# last-window highlight
+tmux_conf_theme_window_status_last_fg='#89b4fa'
+tmux_conf_theme_window_status_last_bg='default'
+
+# -- status bar: floating pill theme (local / iTerm2) -------------------------
+#
+# Nerd Font rounded cap glyphs: \uE0B6 = left open, \uE0B4 = right open
+# These are Powerline Extra (E0B4-E0B7), NOT basic Powerline (E0B0-E0B3).
+#
+# To switch to a plain/ASCII theme for SSH/Termius, change these to:
+#   tmux_conf_theme_left_separator_main=''
+#   tmux_conf_theme_left_separator_sub='|'
+#   tmux_conf_theme_right_separator_main=''
+#   tmux_conf_theme_right_separator_sub='|'
+#   tmux_conf_theme_window_status_format=' #I #W '
+#   tmux_conf_theme_window_status_current_format=' #I #W '
+#   tmux_conf_theme_window_status_fg='#cdd6f4'
+#   tmux_conf_theme_window_status_current_fg='#1e1e2e'
+#   tmux_conf_theme_window_status_current_bg='#cba6f7'
+#   tmux_conf_theme_window_status_current_attr='bold'
+#   tmux_conf_theme_status_left=' #S | #{pretty_pane_current_path} '
+#   tmux_conf_theme_status_right='#{prefix}#{mouse}#{pairing}#{synchronized} #{?battery_status,#{battery_status} ,}#{?battery_percentage,#{battery_percentage} ,} %R  %d %b | #{username}#{root} #H '
+#   tmux_conf_theme_status_left_fg='#1e1e2e,#cdd6f4'
+#   tmux_conf_theme_status_left_bg='#cba6f7,#313244'
+#   tmux_conf_theme_status_left_attr='bold,none'
+#   tmux_conf_theme_status_right_fg='#bac2de,#1e1e2e'
+#   tmux_conf_theme_status_right_bg='#1e1e2e,#89b4fa'
+#   tmux_conf_theme_status_right_attr='none,bold'
+
+# pill separators (Nerd Font E0B6/E0B4)
+tmux_conf_theme_left_separator_main='\uE0B6'
+tmux_conf_theme_left_separator_sub='│'
+tmux_conf_theme_right_separator_main='\uE0B4'
+tmux_conf_theme_right_separator_sub='│'
+
+# window tabs (inactive pill)
+#
+# bg='default' is transparent (see status bar base comment for trade-off).
+# The _fg var sets the cap glyph color; it matches the pill interior so the
+# rounded cap renders in the pill color against the transparent background.
+tmux_conf_theme_window_status_fg='#45475a'
+tmux_conf_theme_window_status_bg='default'
+tmux_conf_theme_window_status_attr='none'
+tmux_conf_theme_window_status_format='\uE0B6#[fg=#cdd6f4,bg=#45475a,nobold] #I #W #[fg=#45475a,bg=default,nobold]\uE0B4'
+
+# window tabs (active pill)
+tmux_conf_theme_window_status_current_fg='#1e1e2e'
+tmux_conf_theme_window_status_current_bg='default'
+tmux_conf_theme_window_status_current_attr='none'
+tmux_conf_theme_window_status_current_format='#[fg=#cba6f7,bg=default,nobold,nounderscore,noitalics]\uE0B6#[fg=#1e1e2e,bg=#cba6f7,bold] #I #W #[fg=#cba6f7,bg=default,nobold]\uE0B4'
+
+# status left pill: ◆ session  path
+#
+# #{pretty_pane_current_path} is an oh-my-tmux custom format (path with ~
+# substitution). It expands to plain path text only (no embedded styling),
+# so it is safe to use inside a manual pill format string.
+tmux_conf_theme_status_left=' \uE0B6#[fg=#1e1e2e,bg=#cba6f7,bold] ◆ #S #[fg=#cba6f7,bg=default,nobold]\uE0B4 #[fg=#313244,bg=default,nobold]\uE0B6#[fg=#cdd6f4,bg=#313244,nobold] #{pretty_pane_current_path} #[fg=#313244,bg=default,nobold]\uE0B4 '
+tmux_conf_theme_status_left_fg='#cba6f7'
+tmux_conf_theme_status_left_bg='default'
+tmux_conf_theme_status_left_attr='none'
+
+# status right: indicators  battery  time
+#
+# DESIGN DECISION — user@host pill removed:
+#   The user@host pill was removed because the username and hostname already
+#   appear in the shell prompt. Removing it gives more space and reduces noise.
+#
+# IMPORTANT — #{username}, #{hostname}, #{root} are oh-my-tmux CUSTOM vars:
+#   They expand with embedded styling including their own cap glyphs, which
+#   breaks any manual pill format string they are placed inside. Always use
+#   #(whoami) for username, #h for short hostname, #H for full hostname.
+tmux_conf_theme_status_right='#{prefix}#{mouse}#{pairing}#{synchronized} #{?battery_status, #{battery_status},}#{?battery_bar, #{battery_bar},}#{?battery_percentage, #{battery_percentage},}  #[fg=#313244,bg=default,nobold]\uE0B6#[fg=#bac2de,bg=#313244,nobold] %R  %d %b #[fg=#313244,bg=default,nobold]\uE0B4 '
+tmux_conf_theme_status_right_fg='#6c7086'
+tmux_conf_theme_status_right_bg='default'
+tmux_conf_theme_status_right_attr='none'
+
+
+# -- indicators ----------------------------------------------------------------
+
+tmux_conf_theme_pairing='👓 '
+tmux_conf_theme_pairing_fg='none'
+tmux_conf_theme_pairing_bg='none'
+tmux_conf_theme_pairing_attr='none'
+
+tmux_conf_theme_prefix='⌨ '
+tmux_conf_theme_prefix_fg='none'
+tmux_conf_theme_prefix_bg='none'
+tmux_conf_theme_prefix_attr='none'
+
+tmux_conf_theme_root='!'
+tmux_conf_theme_root_fg='none'
+tmux_conf_theme_root_bg='none'
+tmux_conf_theme_root_attr='bold,blink'
+
+tmux_conf_theme_synchronized='🔒'
+tmux_conf_theme_synchronized_fg='none'
+tmux_conf_theme_synchronized_bg='none'
+tmux_conf_theme_synchronized_attr='none'
+
+
+# -- battery -------------------------------------------------------------------
+
+tmux_conf_battery_bar_symbol_full='◼'
+tmux_conf_battery_bar_symbol_empty='◻'
+tmux_conf_battery_bar_length='auto'
+
+# catppuccin gradient: red (empty) → peach → yellow → green (full)
+tmux_conf_battery_bar_palette='gradient(#f38ba8,#fab387,#f9e2af,#a6e3a1)'
+tmux_conf_battery_hbar_palette='gradient'
+tmux_conf_battery_vbar_palette='gradient'
+
+tmux_conf_battery_status_charging='↑'
+tmux_conf_battery_status_discharging='↓'
+
+tmux_conf_theme_clock_colour='#89b4fa'
+tmux_conf_theme_clock_style='24'
+
+
+# -- clipboard -----------------------------------------------------------------
+
+# macOS: pbcopy; Linux: xsel/xclip; silently skipped if unavailable
+tmux_conf_copy_to_os_clipboard=true
+
+
+# -- user customizations -------------------------------------------------------
+
+set -g history-limit 50000
+
+# true color
+set -g default-terminal "tmux-256color"
+set -sa terminal-features ",xterm-256color:RGB"
+
+# pass focus events through to vim/neovim
+set -g focus-events on
+
+set -g mouse on
+
+# show feedback when toggling mouse
+bind m run "cut -c3- '#{TMUX_CONF}' | sh -s _toggle_mouse" \; display 'mouse #{?#{mouse},on,off}'
+
+# -- terminal detection --------------------------------------------------------
+#
+# These if-shell commands are fine for runtime values (not tmux_conf_* theme
+# vars). $SSH_CLIENT/$SSH_TTY are available when the tmux server was started
+# from an SSH shell; they may NOT be set when attaching via SSH to an existing
+# locally-started server (not in tmux update-environment by default).
+#
+# Known terminals:
+#   iTerm2 (local Mac)   — $TERM_PROGRAM=iTerm.app, no $SSH_CLIENT
+#   Termius → Mac/server — $SSH_CLIENT and $SSH_TTY set
+#   VS Code terminal     — $TERM_PROGRAM=vscode
+
+# lower escape-time for local (fast key sequences); higher for SSH (mobile latency)
+if-shell '[ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]' \
+  'set -sg escape-time 50' \
+  'set -sg escape-time 10'
+
+# fewer status refreshes over SSH to save mobile bandwidth
+if-shell '[ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]' \
+  'set -g status-interval 60' \
+  'set -g status-interval 15'
+
+# -- keybindings ---------------------------------------------------------------
+
+unbind C-a
+unbind C-b
+set -g prefix C-t
+bind C-t send-prefix
+
+#set -g status-position top
+
+# -- plugins -------------------------------------------------------------------
+
+set -g @plugin 'tmux-plugins/tpm'
+set -g @plugin 'tmux-plugins/tmux-yank'
+set -g @plugin 'Morantron/tmux-fingers'
+
+# tmux-fingers: prefix + F → hint mode (click-to-copy paths, URLs, git hashes)
+set -g @fingers-key F
+
+# tmux-yank: copy-on-mouse-drag also sends to system clipboard
+set -g @yank_with_mouse on
+
+# Initialize tpm (must be last line)
+run '~/.tmux/plugins/tpm/tpm'

@@ -16,6 +16,7 @@ import {
 
 writeToProfile('kayg-primary', [
   navigationLayer(),
+  selectLayer(),
   numberLayer(),
   symbolLayer(),
   functionKeyLayer(),
@@ -134,6 +135,41 @@ function mediaLayer() {
     ])
 }
 
+function selectLayer() {
+  return hyperLayer('v')
+    .description('Select Layer')
+    .notification()
+    .manipulators([
+      // left half of the keyboard //
+
+      // -- right half of the keyboard -- //
+      // move cursor to the beginning of the line
+      map('y').to('left_arrow', 'left_command'),
+      // move cursor down by one page
+      map('u').to('down_arrow', 'fn'),
+      // move cursor up by one page
+      map('i').to('up_arrow', 'fn'),
+      // move cursor to the end of the line
+      map('o').to('right_arrow', 'left_command'),
+
+      // arrow keys, inspired by Max Stoiber and vim
+      map('h').to('left_arrow', 'left_shift'),
+      map('j').to('down_arrow', 'left_shift'),
+      map('k').to('up_arrow', 'left_shift'),
+      map('l').to('right_arrow', 'left_shift'),
+      map(';').to('delete_or_backspace'),
+
+      // move left by one word
+      map('n').to('left_arrow', ['left_option', 'left_shift']),
+      // move to the beginning and end of the document
+      map('m').to('up_arrow', ['left_option', 'left_shift']),
+      map(',').to('down_arrow', ['left_option', 'left_shift']),
+      // move right by one word
+      map('.').to('right_arrow', ['left_option', 'left_shift']),
+
+    ])
+}
+
 function navigationLayer() {
   return hyperLayer('spacebar')
     .description('Navigation Layer')
@@ -142,6 +178,15 @@ function navigationLayer() {
       // left half of the keyboard //
 
       // -- right half of the keyboard -- //
+      // move cursor to the beginning of the line
+      map('y').to('left_arrow', 'left_command'),
+      // move cursor down by one page
+      map('u').to('down_arrow', 'fn'),
+      // move cursor up by one page
+      map('i').to('up_arrow', 'fn'),
+      // move cursor to the end of the line
+      map('o').to('right_arrow', 'left_command'),
+
       // arrow keys, inspired by Max Stoiber and vim
       map('h').to('left_arrow'),
       map('j').to('down_arrow'),
@@ -157,11 +202,6 @@ function navigationLayer() {
       // move right by one word
       map('.').to('right_arrow', 'left_option'),
 
-      // move to the beginning / end of the line
-      map('y').to('left_arrow', 'left_command'),
-      map('u').to('down_arrow', 'fn'),
-      map('i').to('up_arrow', 'fn'),
-      map('o').to('right_arrow', 'left_command'),
     ])
 }
 

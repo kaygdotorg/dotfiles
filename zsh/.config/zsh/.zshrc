@@ -121,6 +121,18 @@ check_if_installed() {
     command -v "${1}" 2>/dev/null 1>&2;
 }
 
+# wttr(): Show weather for a location (defaults to Delhi)
+# Usage: wttr [city]
+wttr() {
+    curl https://wttr.in/${1:-Delhi}
+}
+
+# ynab_token(): Retrieve YNAB API token from 1Password
+# Usage: ynab_token (reads op://Private/YNAB API Token/password)
+ynab_token() {
+    op read "op://Private/YNAB API Token/password"
+}
+
 # ============================================================================
 # ZSH OPTIONS
 # ============================================================================
@@ -188,9 +200,12 @@ fi
 # rust utils - modern replacements for classic tools
 # Only alias if the tool exists (checked by check_if_installed)
 check_if_installed bat && alias cat=bat    # Syntax highlighting cat
-check_if_installed eza && alias ls=eza     # Modern ls with git integration  
+check_if_installed eza && alias ls=eza     # Modern ls with git integration
 check_if_installed fd && alias find=fd     # Fast, user-friendly find
 check_if_installed rg && alias grep=rg     # Fast recursive grep
+
+# macOS DNS cache flush
+alias flush_dns='sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
 
 # ============================================================================
 # EXTERNAL TOOL INTEGRATIONS
@@ -273,3 +288,6 @@ fi
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+# bun completions
+[ -s "/Users/kayg/.bun/_bun" ] && source "/Users/kayg/.bun/_bun"
