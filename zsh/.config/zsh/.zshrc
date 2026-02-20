@@ -122,12 +122,6 @@ check_if_installed() {
     command -v "${1}" 2>/dev/null 1>&2;
 }
 
-# ynab_token(): Retrieve YNAB API token from 1Password
-# Usage: ynab_token (reads op://Private/YNAB API Token/password)
-ynab_token() {
-    op read "op://Private/YNAB API Token/password"
-}
-
 # ============================================================================
 # ZSH OPTIONS
 # ============================================================================
