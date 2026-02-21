@@ -48,51 +48,84 @@ if [[ $- == *i* ]] && [[ -z "${TMUX}" ]] && [[ -d "${HOME}/.config/tmux" && "$(c
 fi
 
 # ============================================================================
-# Oh My Zsh Configuration
+# History
 # ============================================================================
-export ZSH="${ZDOTDIR}"
+HISTFILE="${ZDOTDIR}/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=10000
 
-# Save history at a custom location
-HISTFILE="${ZSH}/.zsh_history"
-
-# Save z's db at a custom location
-_Z_DATA="${ZSH}/.z"
-
-# _ and - will be interchangeable
-HYPHEN_INSENSITIVE="true"
-
-# Enable command auto-correction
-ENABLE_CORRECTION="true"
-
-# Display red dots whilst waiting for completion
-COMPLETION_WAITING_DOTS="true"
+setopt extended_history        # Record timestamp of command
+setopt hist_expire_dups_first  # Delete duplicates first when HISTFILE exceeds HISTSIZE
+setopt hist_ignore_dups        # Ignore duplicated commands in history list
+setopt hist_ignore_space       # Ignore commands that start with space
+setopt hist_verify             # Show command before executing from history
+setopt inc_append_history      # Add commands incrementally, not just at exit
+setopt share_history           # Share command history between sessions
 
 # ============================================================================
-# PLUGIN CONFIGURATION (consolidated here for clarity)
+# Completion System
 # ============================================================================
-plugins=(
-    copyfile      # Copy file contents to clipboard: `copyfile <filename>`
-    git           # Git aliases and functions
-    vi-mode       # Vim-style line editing (Esc to enter normal mode)
-    z             # Jump to recent directories: `z <pattern>`
-    zsh-completions            # Additional completion definitions
-    zsh-syntax-highlighting    # Real-time command syntax highlighting
-    zsh-autosuggestions        # Suggest commands from history
-    history-substring-search   # Search history with Up/Down arrows
-)
+# Load additional completions from plugin before compinit
+fpath=(${ZDOTDIR}/plugins/zsh-completions/src $fpath)
+
+# Cached compinit — only regenerate once per day
+autoload -Uz compinit
+if [[ -n ${ZDOTDIR}/.zcompdump(#qN.mh+24) ]]; then
+    compinit
+else
+    compinit -C
+fi
+
+# Completion styles
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]-_}={[:upper:][:lower:]_-}' 'r:|=*' 'l:|=* r:|=*'
+zstyle ':completion:*' special-dirs true
+zstyle ':completion:*' list-colors ''
+
+# ============================================================================
+# Colors
+# ============================================================================
+autoload -U colors && colors
+(( $+commands[dircolors] )) && eval "$(dircolors -b)"
+
+# ============================================================================
+# ZSH Options
+# ============================================================================
+setopt auto_cd                 # Type directory name to cd into it
+setopt extended_glob           # Enable advanced globbing patterns
+setopt nocaseglob              # Case-insensitive globbing
+setopt auto_pushd              # Push directories onto the stack automatically
+setopt pushd_ignore_dups       # Don't push duplicate directories
+setopt pushdminus              # Swap + and - for pushd
+setopt correct                 # Enable command auto-correction
+setopt multios                 # Allow multiple redirections
+setopt interactivecomments     # Allow comments in interactive shell
+
+# ============================================================================
+# Vi Mode
+# ============================================================================
+bindkey -v
+export KEYTIMEOUT=1
+
+# ============================================================================
+# Plugins
+# ============================================================================
 
 # --- zsh-autosuggestions configuration ---
-# Fetch suggestions asynchronously (non-blocking UI)
 export ZSH_AUTOSUGGEST_USE_ASYNC=1
-# Order of strategies: try matching previous command first, then completions
-export ZSH_AUTOSUGGEST_STRATEGY=(
-    match_prev_cmd
-    completion
-)
-# Don't suggest for very long commands (performance)
+export ZSH_AUTOSUGGEST_STRATEGY=(match_prev_cmd completion)
 export ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
 
-source "${ZSH}/oh-my-zsh.sh"
+# Source plugins
+source "${ZDOTDIR}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+source "${ZDOTDIR}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+source "${ZDOTDIR}/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh"
+
+# Keybindings for history-substring-search (must be after sourcing)
+bindkey '^[[A' history-substring-search-up
+bindkey '^[[B' history-substring-search-down
+bindkey -M vicmd 'k' history-substring-search-up
+bindkey -M vicmd 'j' history-substring-search-down
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -103,33 +136,6 @@ source "${ZSH}/oh-my-zsh.sh"
 check_if_installed() {
     command -v "${1}" 2>/dev/null 1>&2;
 }
-
-# ============================================================================
-# ZSH OPTIONS
-# ============================================================================
-# auto_cd: Type directory name to cd into it (no need to type `cd`)
-# Example: instead of `cd Documents`, just type `Documents`
-setopt auto_cd
-
-# extended_glob: Enable advanced globbing patterns
-# Example: `ls ^*.txt` lists all files except .txt files
-setopt extended_glob
-
-# NO_CASE_GLOB: Case-insensitive globbing
-# Example: `ls *.txt` matches both `file.txt` and `FILE.TXT`
-setopt nocaseglob
-
-# APPEND_HISTORY: Multiple zsh sessions append to history file (don't overwrite)
-setopt append_history
-
-# SHARE_HISTORY: Share history between all sessions in real-time
-setopt share_history
-
-# HIST_IGNORE_DUPS: Don't save duplicate commands
-setopt hist_ignore_dups
-
-# HIST_IGNORE_SPACE: Don't save commands starting with space (for secrets)
-setopt hist_ignore_space
 
 # ============================================================================
 # cdr: Recent Directories
@@ -212,6 +218,11 @@ if [[ -f "$HOME/.atuin/bin/env" ]]; then
     eval "$(atuin init zsh)"
 fi
 
+# zoxide (smart directory jumper, replaces z)
+if command -v zoxide 2>/dev/null 1>&2; then
+    eval "$(zoxide init zsh)"
+fi
+
 # shellfish (if installed) - only for interactive shells
 if [[ $- == *i* ]] && [[ -f "${HOME}/.shellfishrc" ]]; then
     # When inside tmux, SSH_TTY points to the parent SSH session's tty
@@ -242,7 +253,6 @@ fi
 # VI-MODE CURSOR SHAPE
 # ============================================================================
 # Beam cursor in insert mode, block cursor in normal mode.
-# This replaces p10k's vi-mode prompt character indicators.
 zle-keymap-select() {
     case "${KEYMAP}" in
         vicmd)      print -n '\e[2 q' ;; # block

@@ -140,8 +140,7 @@ update_tmux() {
 # zsh
 zsh_src="${script_path}/zsh/.config/zsh"
 zsh_dest_zsh="${HOME}/.config/zsh"
-zsh_dest_omz="${zsh_dest_zsh}"
-zsh_dest_custom_plugins="${HOME}/.config/zsh/custom/plugins"
+zsh_dest_plugins="${HOME}/.config/zsh/plugins"
 zsh_plugins="
     https://github.com/zsh-users/zsh-autosuggestions
     https://github.com/zsh-users/zsh-completions
@@ -159,20 +158,21 @@ setup_zsh() {
     printf '%s' "Linking zshenv to ${HOME}"
     run_cmd ln -sf "${script_path}/zsh/.zshenv" "${HOME}"
 
-    # install oh-my-zsh
-    printf '%s' "Installing oh-my-zsh"
-    run_cmd git clone "https://github.com/ohmyzsh/ohmyzsh.git" "${zsh_dest_omz}"
+    # create plugin and cache directories
+    printf '%s' "Creating plugin and cache directories"
+    run_cmd mkdir -p "${zsh_dest_plugins}" "${zsh_dest_zsh}/cache"
 
     # install plugins for zsh
     printf '%s\n' 'Setting up plugins for ZSH'
     for plugin in ${zsh_plugins}; do
         printf '%s' "  Cloning ${plugin}"
-        run_cmd git -C "${zsh_dest_custom_plugins}" clone "${plugin}"
+        run_cmd git -C "${zsh_dest_plugins}" clone "${plugin}"
     done
 
     # install oh-my-posh
     printf '%s' 'Installing oh-my-posh'
-    run_cmd curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin"
+    curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null
+    status
 
     # linking configuration
     printf '%s' 'Linking personal configuration'
@@ -180,17 +180,15 @@ setup_zsh() {
 }
 
 update_zsh() {
-    printf '%s' 'Updating oh-my-zsh'
-    run_cmd git -C "${zsh_dest_omz}" pull
-
     printf '%s\n' 'Updating plugins'
-    for plugin in "${zsh_dest_custom_plugins}"/*; do
+    for plugin in "${zsh_dest_plugins}"/*; do
         printf '%s' "  Updating $(basename "${plugin}")"
         run_cmd git -C "${plugin}" pull
     done
 
     printf '%s' 'Updating oh-my-posh'
-    run_cmd curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin"
+    curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null
+    status
 }
 
 # ssh
