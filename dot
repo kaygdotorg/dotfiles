@@ -129,7 +129,11 @@ setup_tmux() {
     run_cmd ln -sf "${tmux_dest}/.tmux.conf" "${HOME}" && ln -sf "${tmux_src}/.tmux.conf.local" "${HOME}/.tmux.conf.local"
 
     printf '%s' "Installing tpm (tmux plugin manager)"
-    run_cmd git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.tmux/plugins/tpm"
+    if [ -d "${HOME}/.tmux/plugins/tpm" ]; then
+        printf ' skipped (already exists: %s)\n' "${HOME}/.tmux/plugins/tpm"
+    else
+        run_cmd mkdir -p "${HOME}/.tmux/plugins" && git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.tmux/plugins/tpm"
+    fi
 }
 
 update_tmux() {
@@ -191,6 +195,30 @@ update_zsh() {
     status
 }
 
+# atuin
+setup_atuin() {
+    if [ -d "${HOME}/.atuin" ]; then
+        printf '%s\n' "${HOME}/.atuin already exists. Run 'dot update atuin' to update."
+        exit 1
+    fi
+
+    printf '%s' 'Installing atuin'
+    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
+    status
+
+    printf '%s\n' 'Run the following to complete setup:'
+    printf '%s\n' '  exec zsh'
+    printf '%s\n' '  atuin register -u <USERNAME> -e <EMAIL>  (or: atuin login -u <USERNAME>)'
+    printf '%s\n' '  atuin import auto'
+    printf '%s\n' '  atuin sync'
+}
+
+update_atuin() {
+    printf '%s' 'Updating atuin'
+    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
+    status
+}
+
 # ssh
 ssh_src="${script_path}/.ssh"
 ssh_dest="${HOME}/.ssh"
@@ -218,7 +246,10 @@ main() {
     fi
 
 
-    [ "${2}" = "dot" ] || check_if_installed_and_exit "${2}"
+    case "${2}" in
+        dot|atuin) ;;
+        *) check_if_installed_and_exit "${2}" ;;
+    esac
     ${1}_${2}
 }
 
