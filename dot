@@ -90,7 +90,7 @@ run_cmd_with_log() {
 # use:
 #   status
 status() {
-    if [ "${?}" == "0" ]; then
+    if [ "${?}" = "0" ]; then
         printf " \u2714\n"
     else
         printf " \u274c\n"
