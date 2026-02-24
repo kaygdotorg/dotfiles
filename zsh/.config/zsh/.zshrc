@@ -213,9 +213,12 @@ if [[ -f "${NVM_DIR}/nvm.sh" ]]; then
 fi
 
 # Atuin (shell history with sync and search)
+# --disable-up-arrow: keep up/down for zsh-history-substring-search
+# ATUIN_TMUX_POPUP: run search in a tmux popup (own PTY, avoids ZLE fd issues)
 if [[ -f "$HOME/.atuin/bin/env" ]]; then
     . "$HOME/.atuin/bin/env"
-    eval "$(atuin init zsh)"
+    eval "$(atuin init zsh --disable-up-arrow)"
+    export ATUIN_TMUX_POPUP=true
 fi
 
 # zoxide (smart directory jumper, replaces z)

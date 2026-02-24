@@ -196,6 +196,8 @@ update_zsh() {
 }
 
 # atuin
+atuin_src="${script_path}/atuin/.config/atuin"
+
 setup_atuin() {
     if [ -d "${HOME}/.atuin" ]; then
         printf '%s\n' "${HOME}/.atuin already exists. Run 'dot update atuin' to update."
@@ -205,6 +207,14 @@ setup_atuin() {
     printf '%s' 'Installing atuin'
     curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
     status
+
+    # symlink to ~/.local/bin so atuin is available in tmux popups
+    # (tmux global PATH doesn't include ~/.atuin/bin)
+    printf '%s' 'Linking atuin to ~/.local/bin'
+    run_cmd ln -sf "${HOME}/.atuin/bin/atuin" "${HOME}/.local/bin/atuin"
+
+    printf '%s' 'Linking atuin configuration'
+    run_cmd mkdir -p "${HOME}/.config/atuin" && ln -sf "${atuin_src}/config.toml" "${HOME}/.config/atuin/config.toml"
 
     printf '%s\n' 'Run the following to complete setup:'
     printf '%s\n' '  exec zsh'
