@@ -313,7 +313,10 @@ set -g prefix C-t
 set -g prefix2 None
 bind C-t send-prefix
 
-#set -g status-position top
+# status bar: top on local Mac, bottom on remote SSH
+if-shell '[ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]' \
+  'set -g status-position bottom' \
+  'set -g status-position top'
 
 # -- plugins -------------------------------------------------------------------
 
