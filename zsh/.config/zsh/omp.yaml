@@ -2,7 +2,6 @@
 
 version: 3
 final_space: true
-streaming: 100
 
 palette:
   rosewater: "#f5e0dc"
