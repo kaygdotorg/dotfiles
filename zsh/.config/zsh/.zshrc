@@ -241,15 +241,28 @@ fi
 # ============================================================================
 # PROMPT — Oh My Posh
 # ============================================================================
-# NOTE: OMP's streaming mode (streaming: N in omp.yaml) is intentionally
-# disabled. Streaming renders the prompt in two phases: show fast segments
-# immediately, then re-render when slow segments (git, kubectl) finish.
-# However, _omp_start_streaming uses `exec {fd}< <(cmd) 2>/dev/null`,
-# and in zsh bare `exec` applies ALL redirections permanently — the
-# 2>/dev/null silently discards stderr for the entire shell session.
+# OMP streaming mode renders the prompt in two phases: fast segments appear
+# immediately, slow ones (git, kubectl) re-render when ready. However,
+# _omp_start_streaming uses `exec {fd}< <(cmd) 2>/dev/null` which in zsh
+# permanently redirects stderr to /dev/null (bare exec applies ALL redirections).
+# Workaround: wrap _omp_start_streaming to save/restore stderr around the exec.
 # See: https://github.com/JanDeDobbeleer/oh-my-posh/issues/5492
 if command -v oh-my-posh 2>/dev/null 1>&2; then
     eval "$(oh-my-posh init zsh --config "${ZDOTDIR}/omp.yaml")"
+
+    # Patch _omp_start_streaming to preserve stderr (upstream bug workaround)
+    if typeset -f _omp_start_streaming >/dev/null 2>&1; then
+        functions[_omp_start_streaming_orig]=$functions[_omp_start_streaming]
+        _omp_start_streaming() {
+            local _omp_stderr_save
+            exec {_omp_stderr_save}>&2
+            _omp_start_streaming_orig
+            local ret=$?
+            exec 2>&${_omp_stderr_save}
+            exec {_omp_stderr_save}>&-
+            return $ret
+        }
+    fi
 fi
 
 # ============================================================================
