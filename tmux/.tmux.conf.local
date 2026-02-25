@@ -273,9 +273,18 @@ tmux_conf_copy_to_os_clipboard=true
 
 set -g history-limit 50000
 
+# vi-style copy mode (v to select, y to yank)
+set -g mode-keys vi
+
 # true color
 set -g default-terminal "tmux-256color"
 set -sa terminal-features ",xterm-256color:RGB"
+
+# OSC 52 clipboard: works over SSH through nested tmux
+# (requires terminal support — iTerm2: Prefs → General → Selection →
+# "Applications in terminal may access clipboard")
+set -g set-clipboard on
+set -g allow-passthrough on
 
 # pass focus events through to vim/neovim
 set -g focus-events on
