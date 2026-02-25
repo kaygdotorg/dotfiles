@@ -37,14 +37,7 @@ fi
 # ============================================================================
 # Only auto-start tmux in interactive shells (not iOS/Shellfish scp, etc.)
 if [[ $- == *i* ]] && [[ -z "${TMUX}" ]] && [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
-    # iTerm2 Control Mode: Uses native iTerm2 tmux integration
-    # -CC flag tells tmux to run in "control mode" where iTerm2 handles the UI
-    # Benefits: Native scrollback, mouse support, copy/paste, better rendering
-    if [[ "${TERM_PROGRAM}" == "iTerm.app" ]]; then
-        exec tmux -CC new-session -As work
-    else
-        exec tmux new-session -As work
-    fi
+    exec tmux new-session -As work
 fi
 
 # ============================================================================
