@@ -241,6 +241,11 @@ fi
 # ============================================================================
 # PROMPT — Oh My Posh
 # ============================================================================
+# NOTE: OMP's streaming mode (streaming: N in omp.yaml) is intentionally
+# disabled. It uses `exec {fd}< <(cmd) 2>/dev/null` in _omp_start_streaming,
+# and in zsh bare `exec` applies ALL redirections permanently — so the
+# 2>/dev/null silently discards stderr for the entire shell session.
+# Upstream bug: https://github.com/JanDeDobbeleer/oh-my-posh
 if command -v oh-my-posh 2>/dev/null 1>&2; then
     eval "$(oh-my-posh init zsh --config "${ZDOTDIR}/omp.yaml")"
 fi
