@@ -265,8 +265,10 @@ tmux_conf_theme_clock_style='24'
 
 # -- clipboard -----------------------------------------------------------------
 
-# macOS: pbcopy; Linux: xsel/xclip; silently skipped if unavailable
-tmux_conf_copy_to_os_clipboard=true
+# Disabled — oh-my-tmux would pipe to pbcopy/xclip, which fails over SSH
+# (no X display on the remote). Instead, set-clipboard on (below) uses
+# OSC 52 which works universally: local, SSH, and nested tmux.
+tmux_conf_copy_to_os_clipboard=false
 
 
 # -- user customizations -------------------------------------------------------
