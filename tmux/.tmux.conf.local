@@ -285,8 +285,10 @@ set -sa terminal-features ",xterm-256color:RGB"
 # OSC 52 clipboard: works over SSH through nested tmux
 # (requires terminal support — iTerm2: Prefs → General → Selection →
 # "Applications in terminal may access clipboard")
+# NOTE: allow-passthrough is NOT needed for OSC 52 — set-clipboard on handles
+# it natively. Passthrough forwards DCS sequences to the terminal, which causes
+# iTerm2 to hang on config reload (malformed DCS blocks it waiting for input).
 set -g set-clipboard on
-set -g allow-passthrough on
 
 # pass focus events through to vim/neovim
 set -g focus-events on
