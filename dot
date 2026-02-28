@@ -38,7 +38,7 @@ check_if_installed_and_exit() {
 #   run_cmd cmd
 run_cmd() {
     if [ -z "${1}" ]; then
-        printf '%s' "No arguments provided. Exiting."
+        printf '%s\n' "No arguments provided. Exiting."
         exit 1
     fi
 
@@ -61,7 +61,7 @@ run_cmd() {
 #   run_cmd logfile cmd
 run_cmd_with_log() {
     if [ -z "${1}" ]; then
-        printf '%s' "No arguments provided. Exiting."
+        printf '%s\n' "No arguments provided. Exiting."
         exit 1
     fi
 
@@ -144,7 +144,7 @@ zsh_plugins="
 
 setup_zsh() {
     if [ -d "${zsh_dest_zsh}" ]; then
-       printf '%s' "${zsh_dest_zsh} exists, which indicates a previous installation. Please remove this directory and run the setup again."
+       printf '%s\n' "${zsh_dest_zsh} exists, which indicates a previous installation. Please remove this directory and run the setup again."
        exit 1
     fi
 
@@ -239,9 +239,23 @@ setup_ssh() {
     printf '%s\n' "SSH setup complete. Make sure your SSH keys are in ${ssh_dest}/"
 }
 
+# karabiner (macOS only)
+karabiner_src="${script_path}/karabiner-ts"
+
+setup_karabiner() {
+    check_if_installed_and_exit npx
+
+    printf '%s' "Generating Karabiner-Elements configuration"
+    run_cmd npx --yes karabiner.ts "${karabiner_src}/index.ts"
+}
+
+update_karabiner() {
+    setup_karabiner
+}
+
 main() {
     case "${2}" in
-        dot|atuin) ;;
+        dot|atuin|karabiner) ;;
         *) check_if_installed_and_exit "${2}" ;;
     esac
     ${1}_${2}

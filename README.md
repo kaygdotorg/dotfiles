@@ -41,6 +41,7 @@ dot setup zsh
 dot setup tmux
 dot setup atuin
 dot setup ssh
+dot setup karabiner  # macOS only, requires npx
 ```
 
 ## Features
