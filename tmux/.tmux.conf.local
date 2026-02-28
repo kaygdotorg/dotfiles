@@ -277,6 +277,11 @@ set -g history-limit 50000
 
 # vi-style copy mode (v to select, y to yank)
 set -g mode-keys vi
+# oh-my-tmux defaults y to copy-selection-and-cancel, which only copies to the
+# tmux paste buffer and NEVER emits OSC 52 (even with set-clipboard on).
+# copy-pipe-and-cancel (no pipe command, tmux >= 3.2) copies to the paste buffer
+# AND emits OSC 52, enabling clipboard sync through nested tmux over SSH.
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel
 
 # true color
 set -g default-terminal "tmux-256color"
