@@ -45,7 +45,7 @@ fi
 # ============================================================================
 HISTFILE="${ZDOTDIR}/.zsh_history"
 HISTSIZE=50000
-SAVEHIST=10000
+SAVEHIST=50000
 
 setopt extended_history        # Record timestamp of command
 setopt hist_expire_dups_first  # Delete duplicates first when HISTFILE exceeds HISTSIZE

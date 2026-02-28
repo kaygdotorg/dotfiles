@@ -6,7 +6,7 @@ Configuration files and management script for a personalized development environ
 
 ### Clone
 
-Clone the repo to any path you like. I keep mine at `${HOME}/.config/.dotfiles`.
+Clone the repo to any path you like. I keep mine at `${HOME}/.config/dotfiles`.
 
 This repository is mirrored on both GitHub and a self-hosted GitLab instance:
 
@@ -31,7 +31,7 @@ Make `dot` do all the dirty work.
 **Symlink `dot` to `${HOME}/.local/bin` assuming the directory is in your PATH:**
 
 ```bash
-"${HOME}/.config/.dotfiles/dot" setup dot
+"${HOME}/.config/dotfiles/dot" setup dot
 ```
 
 **Setup programs:**
@@ -39,13 +39,16 @@ Make `dot` do all the dirty work.
 ```bash
 dot setup zsh
 dot setup tmux
-# ...
+dot setup atuin
+dot setup ssh
 ```
 
 ## Features
 
-- **Zsh**: Oh My Zsh with Powerlevel10k theme, vi-mode, and optimized performance
-- **Tmux**: Standalone config with Catppuccin Mocha theme, OSC 52 clipboard, vi-mode, and mouse support
+- **Zsh**: Standalone config with Oh My Posh prompt, vi-mode, and lazy-loaded nvm
+- **Tmux**: Standalone config with Catppuccin Mocha theme, OSC 52 clipboard (nested tmux support), vi-mode, and mouse support
+- **Atuin**: Shell history with sync to self-hosted server
+- **SSH**: Managed SSH config
 - **Karabiner**: Advanced keyboard customization with Colemak-DH layout and hyper layers
 - **Dot script**: POSIX-compliant shell script for automated setup and updates
 
@@ -55,9 +58,11 @@ dot setup tmux
 .
 ├── dot                      # Main setup/management script
 ├── zsh/                     # Zsh configuration
-├── tmux/                    # Tmux configuration (client & server)
-├── karabiner-ts/           # Keyboard mapping configuration
-└── scripts/                # Utility scripts
+├── tmux/                    # Tmux configuration
+├── atuin/                   # Atuin shell history configuration
+├── .ssh/                    # SSH configuration
+├── karabiner-ts/            # Keyboard mapping configuration
+└── scripts/                 # Utility scripts
 ```
 
 ## License

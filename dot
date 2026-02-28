@@ -67,7 +67,7 @@ run_cmd_with_log() {
 
     # get the absolute path of the first argument provided, i.e the file to log
     # stdout and stderr to
-    logfile="$(realpath ${1})"
+    logfile="$(realpath "${1}")"
 
     # shift parameters by 1 to the right
     # $1=a $2=b $3=c
@@ -99,7 +99,7 @@ status() {
 }
 
 # script local variables
-script_path="$(dirname $(realpath ${0}))"
+script_path="$(dirname "$(realpath "${0}")")"
 
 # dot
 setup_dot() {
@@ -148,7 +148,7 @@ setup_zsh() {
        exit 1
     fi
 
-    # copy zshenv to /etc/zsh
+    # symlink zshenv to $HOME so zsh picks up ZDOTDIR
     printf '%s' "Linking zshenv to ${HOME}"
     run_cmd ln -sf "${script_path}/zsh/.zshenv" "${HOME}"
 
@@ -240,12 +240,6 @@ setup_ssh() {
 }
 
 main() {
-    # check if running in termux
-    if check_if_installed termux-setup-storage; then
-        termux=1
-    fi
-
-
     case "${2}" in
         dot|atuin) ;;
         *) check_if_installed_and_exit "${2}" ;;
