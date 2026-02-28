@@ -45,7 +45,7 @@ dot setup tmux
 ## Features
 
 - **Zsh**: Oh My Zsh with Powerlevel10k theme, vi-mode, and optimized performance
-- **Tmux**: oh-my-tmux with improved copy/paste, vi-mode, and mouse support
+- **Tmux**: Standalone config with Catppuccin Mocha theme, OSC 52 clipboard, vi-mode, and mouse support
 - **Karabiner**: Advanced keyboard customization with Colemak-DH layout and hyper layers
 - **Dot script**: POSIX-compliant shell script for automated setup and updates
 

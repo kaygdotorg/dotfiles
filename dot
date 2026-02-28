@@ -114,19 +114,10 @@ update_dot() {
 
 # tmux
 tmux_src="${script_path}/tmux"
-tmux_dest="${HOME}/.config/tmux"
 
 setup_tmux() {
-    if [ -d "${tmux_dest}" ]; then
-        printf '%s\n' "${tmux_dest} already exists. Remove it to reinstall: rm -rf ${tmux_dest}"
-        exit 1
-    fi
-
-    printf '%s' "Cloning oh-my-tmux"
-    run_cmd git clone "https://github.com/gpakosz/.tmux.git" "${tmux_dest}"
-
     printf '%s' "Linking tmux configuration"
-    run_cmd ln -sf "${tmux_dest}/.tmux.conf" "${HOME}" && ln -sf "${tmux_src}/.tmux.conf.local" "${HOME}/.tmux.conf.local"
+    run_cmd ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.tmux.conf"
 
     printf '%s' "Installing tpm (tmux plugin manager)"
     if [ -d "${HOME}/.tmux/plugins/tpm" ]; then
@@ -137,8 +128,7 @@ setup_tmux() {
 }
 
 update_tmux() {
-    printf '%s' "Updating oh-my-tmux repo"
-    run_cmd git --git-dir="${tmux_dest}/.git" --work-tree="${tmux_dest}" pull
+    printf '%s\n' "No framework to update. Use prefix + U to update plugins."
 }
 
 # zsh
