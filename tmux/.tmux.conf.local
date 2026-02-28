@@ -285,10 +285,10 @@ set -sa terminal-features ",xterm-256color:RGB"
 # OSC 52 clipboard: works over SSH through nested tmux
 # (requires terminal support — iTerm2: Prefs → General → Selection →
 # "Applications in terminal may access clipboard")
-# NOTE: allow-passthrough is NOT needed for OSC 52 — set-clipboard on handles
-# it natively. Passthrough forwards DCS sequences to the terminal, which causes
-# iTerm2 to hang on config reload (malformed DCS blocks it waiting for input).
+# allow-passthrough is needed for nested tmux clipboard (inner tmux wraps
+# OSC 52 in DCS passthrough to reach the outer terminal).
 set -g set-clipboard on
+set -g allow-passthrough on
 
 # pass focus events through to vim/neovim
 set -g focus-events on
@@ -334,14 +334,16 @@ if-shell '[ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]' \
 # -- plugins -------------------------------------------------------------------
 
 set -g @plugin 'tmux-plugins/tpm'
-set -g @plugin 'tmux-plugins/tmux-yank'
+# tmux-yank REMOVED — it creates copy-pipe bindings with "tmux paste-buffer"
+# in the pipe command. On config reload, oh-my-tmux's _apply_bindings dumps
+# all bindings, processes them with awk, and re-sources them. The awk mangles
+# lines containing "tmux" in quoted pipe args → "unknown command: tmux" error.
+# The error recovery while-loop blocks tmux, hanging iTerm2.
+# OSC 52 (set-clipboard on) handles clipboard universally without tmux-yank.
 set -g @plugin 'Morantron/tmux-fingers'
 
 # tmux-fingers: prefix + F → hint mode (click-to-copy paths, URLs, git hashes)
 set -g @fingers-key F
-
-# tmux-yank: copy-on-mouse-drag also sends to system clipboard
-set -g @yank_with_mouse on
 
 # Initialize tpm (must be last line)
 run '~/.tmux/plugins/tpm/tpm'
