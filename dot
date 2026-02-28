@@ -102,6 +102,7 @@ status() {
 script_path="$(dirname "$(realpath "${0}")")"
 
 # dot
+# Linking: dot → ~/.local/bin/dot
 setup_dot() {
     printf '%s' "Adding dot to ${HOME}/.local/bin"
     run_cmd mkdir -p "${HOME}/.local/bin" && ln -sf "${script_path}/dot" "${HOME}/.local/bin"
@@ -113,6 +114,8 @@ update_dot() {
 }
 
 # tmux
+# Linking: tmux/.tmux.conf → ~/.config/tmux/tmux.conf
+#          tpm cloned into   ~/.config/tmux/plugins/tpm
 tmux_src="${script_path}/tmux"
 
 setup_tmux() {
@@ -132,7 +135,12 @@ update_tmux() {
 }
 
 # zsh
-zsh_src="${script_path}/zsh/.config/zsh"
+# Linking: zsh/.zshenv  → ~/.zshenv            (sets ZDOTDIR=~/.config/zsh)
+#          zsh/.zshrc   → ~/.config/zsh/.zshrc
+#          zsh/omp.yaml → ~/.config/zsh/omp.yaml
+#          plugins cloned into ~/.config/zsh/plugins/
+#          oh-my-posh installed to ~/.local/bin/
+zsh_src="${script_path}/zsh"
 zsh_dest_zsh="${HOME}/.config/zsh"
 zsh_dest_plugins="${HOME}/.config/zsh/plugins"
 zsh_plugins="
@@ -186,7 +194,9 @@ update_zsh() {
 }
 
 # atuin
-atuin_src="${script_path}/atuin/.config/atuin"
+# Linking: atuin/config.toml → ~/.config/atuin/config.toml
+#          atuin binary linked  ~/.local/bin/atuin
+atuin_src="${script_path}/atuin"
 
 setup_atuin() {
     if [ -d "${HOME}/.atuin" ]; then
@@ -220,6 +230,7 @@ update_atuin() {
 }
 
 # ssh
+# Linking: .ssh/config → ~/.ssh/config
 ssh_src="${script_path}/.ssh"
 ssh_dest="${HOME}/.ssh"
 
@@ -240,6 +251,7 @@ setup_ssh() {
 }
 
 # karabiner (macOS only)
+# Generates: ~/.config/karabiner/karabiner.json (via writeToProfile)
 karabiner_src="${script_path}/karabiner-ts"
 
 setup_karabiner() {

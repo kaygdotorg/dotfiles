@@ -55,15 +55,25 @@ dot setup karabiner  # macOS only, requires npx
 
 ## Repository Structure
 
+Config files are stored flat under each tool's directory. The `dot` script handles creating directories and symlinking to the correct system paths.
+
 ```
 .
 ├── dot                      # Main setup/management script
-├── zsh/                     # Zsh configuration
-├── tmux/                    # Tmux configuration
-├── atuin/                   # Atuin shell history configuration
-├── .ssh/                    # SSH configuration
-├── karabiner-ts/            # Keyboard mapping configuration
-└── scripts/                 # Utility scripts
+├── zsh/
+│   ├── .zshenv              # → ~/.zshenv
+│   ├── .zshrc               # → ~/.config/zsh/.zshrc
+│   └── omp.yaml             # → ~/.config/zsh/omp.yaml
+├── tmux/
+│   └── .tmux.conf           # → ~/.config/tmux/tmux.conf
+├── atuin/
+│   └── config.toml          # → ~/.config/atuin/config.toml
+├── .ssh/
+│   └── config               # → ~/.ssh/config
+├── karabiner-ts/
+│   └── index.ts             # generates ~/.config/karabiner/karabiner.json
+└── scripts/
+    └── toggle-menu-bar-visibility.applescript
 ```
 
 ## License
