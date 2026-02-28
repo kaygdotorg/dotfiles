@@ -117,13 +117,13 @@ tmux_src="${script_path}/tmux"
 
 setup_tmux() {
     printf '%s' "Linking tmux configuration"
-    run_cmd ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.tmux.conf"
+    run_cmd mkdir -p "${HOME}/.config/tmux" && ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.config/tmux/tmux.conf"
 
     printf '%s' "Installing tpm (tmux plugin manager)"
-    if [ -d "${HOME}/.tmux/plugins/tpm" ]; then
-        printf ' skipped (already exists: %s)\n' "${HOME}/.tmux/plugins/tpm"
+    if [ -d "${HOME}/.config/tmux/plugins/tpm" ]; then
+        printf ' skipped (already exists: %s)\n' "${HOME}/.config/tmux/plugins/tpm"
     else
-        run_cmd mkdir -p "${HOME}/.tmux/plugins" && git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.tmux/plugins/tpm"
+        run_cmd mkdir -p "${HOME}/.config/tmux/plugins" && git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.config/tmux/plugins/tpm"
     fi
 }
 
