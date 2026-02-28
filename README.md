@@ -76,6 +76,16 @@ Config files are stored flat under each tool's directory. The `dot` script handl
     └── toggle-menu-bar-visibility.applescript
 ```
 
+## Notes
+
+### Nested tmux clipboard (inner SSH → outer Mac → iTerm2)
+
+Copying from tmux copy mode doesn't use the built-in `set-clipboard on` OSC 52 emission — it's broken when nested (`TERM=tmux-256color`). Instead, all copy-mode bindings explicitly pipe selections through `printf` to write OSC 52 directly to `#{client_tty}`. Application-originated OSC 52 (e.g. from vim) still works via `set-clipboard on` passthrough. See the clipboard section in `tmux/.tmux.conf` for details.
+
+### Shift+Enter in Claude Code inside tmux
+
+Shift+Enter for newlines doesn't work inside tmux because tmux only forwards extended key sequences (kitty keyboard protocol) to apps that explicitly request them, and Claude Code doesn't opt in. The `extended-keys always` setting fixes this but causes breakage in other apps (Shift+Tab, neovim paste, fish completions). **Use `\` + Enter** for newlines in Claude Code instead.
+
 ## License
 
 See [LICENSE](LICENSE) file for details.

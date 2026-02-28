@@ -12,3 +12,6 @@
 
 # Editor / tool state
 .claude/
+
+# Local notes (not part of the dotfiles)
+modern-cli-tools.md
