@@ -47,7 +47,7 @@ Each `dot setup <app>` command creates the necessary directories, symlinks confi
 ## Apps
 
 - **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
-- **Tmux** — Standalone configuration with Catppuccin Mocha theme, OSC 52 clipboard support for nested sessions, vi-mode copy bindings, mouse support, and [TPM](https://github.com/tmux-plugins/tpm) for plugin management.
+- **Tmux** — Standalone configuration with Catppuccin Mocha theme, OSC 52 clipboard support for nested sessions, vi-mode copy bindings, mouse support, F12 pass-through toggle for nested sessions, searchable keybindings cheatsheet (`prefix + ?`), and [TPM](https://github.com/tmux-plugins/tpm) for plugin management.
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
 - **SSH** — Managed SSH client configuration.
 - **Karabiner** — Advanced keyboard customization via [karabiner.ts](https://github.com/evan-liu/karabiner.ts) with Colemak-DH layout and hyper key layers.
@@ -132,6 +132,14 @@ graph LR
 ```
 
 See the clipboard and copy-mode sections in `tmux/.tmux.conf` for the full implementation and explanation.
+
+### Nested tmux pass-through (F12 toggle)
+
+When running tmux inside tmux (e.g., SSH into a remote machine that also runs tmux), key bindings are captured by the outer session. Press `F12` to toggle pass-through mode — all keys go directly to the inner tmux. The outer status bar shows a red lock indicator when pass-through is active. Press `F12` again to return to normal mode.
+
+### Keybindings cheatsheet (prefix + ?)
+
+Press `prefix + ?` to open a searchable, scrollable popup listing every key binding with human-readable descriptions. It covers all three key tables (prefix, root, copy mode) and includes plugin bindings. Use `/` to search, arrow keys or `j`/`k` to scroll, and `q` to close.
 
 ### Shift+Enter in Claude Code inside tmux
 
