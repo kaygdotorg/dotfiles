@@ -141,6 +141,15 @@ When running tmux inside tmux (e.g., SSH into a remote machine that also runs tm
 
 Press `prefix + ?` to open a searchable, scrollable popup listing every key binding with human-readable descriptions. It covers all three key tables (prefix, root, copy mode) and includes plugin bindings. Use `/` to search, arrow keys or `j`/`k` to scroll, and `q` to close.
 
+### Paste buffer reference view
+
+Tmux stores every yanked selection in a paste buffer stack. Two bindings make it easy to reference previous yanks while working:
+
+- **`Y` in copy mode** — Yanks the selection to both the paste buffer and the system clipboard (via OSC 52), then immediately opens it in a resizable split pane for reference.
+- **`prefix + b`** — Browse all paste buffers, select one, and open it in a split pane. Use `prefix + =` to browse and paste instead.
+
+The reference split is scrollable and searchable (powered by `less`), resizable with `prefix + H/J/K/L` or mouse drag, and closes with `q`.
+
 ### Shift+Enter in Claude Code inside tmux
 
 Shift+Enter for newlines does not work inside tmux. Tmux only forwards extended key sequences (kitty keyboard protocol) to applications that explicitly request them, and Claude Code does not opt in.
