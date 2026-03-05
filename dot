@@ -10,6 +10,10 @@ set -o errexit
 # treat unset variables as error when substituting
 set -o nounset
 
+usage() {
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|karabiner>"
+}
+
 # check_if_installed(): a wrapper for `command -v` that silences the output and
 # error streams.
 #
@@ -37,16 +41,16 @@ check_if_installed_and_exit() {
 # use:
 #   run_cmd cmd
 run_cmd() {
-    if [ -z "${1}" ]; then
+    if [ "${#}" -eq 0 ]; then
         printf '%s\n' "No arguments provided. Exiting."
         exit 1
     fi
 
     # if ${logfile} is UNSET or EMPTY, set the value to the string "/dev/null"
-    local output_stream="${logfile:-/dev/null}"
-    local error_stream="${logfile:-/dev/null}"
+    output_stream="${logfile:-/dev/null}"
+    error_stream="${logfile:-/dev/null}"
 
-    if ${@} 1>"${output_stream}" 2>"${error_stream}"; then
+    if "$@" 1>"${output_stream}" 2>"${error_stream}"; then
         printf " done\n"
     else
         printf " failed\n"
@@ -60,7 +64,7 @@ run_cmd() {
 # use:
 #   run_cmd logfile cmd
 run_cmd_with_log() {
-    if [ -z "${1}" ]; then
+    if [ "${#}" -eq 0 ]; then
         printf '%s\n' "No arguments provided. Exiting."
         exit 1
     fi
@@ -91,9 +95,9 @@ run_cmd_with_log() {
 #   status
 status() {
     if [ "${?}" = "0" ]; then
-        printf " \u2714\n"
+        printf " done\n"
     else
-        printf " \u274c\n"
+        printf " failed\n"
         exit 1
     fi
 }
@@ -151,11 +155,6 @@ zsh_plugins="
 "
 
 setup_zsh() {
-    if [ -d "${zsh_dest_zsh}" ]; then
-       printf '%s\n' "${zsh_dest_zsh} exists, which indicates a previous installation. Please remove this directory and run the setup again."
-       exit 1
-    fi
-
     # symlink zshenv to $HOME so zsh picks up ZDOTDIR
     printf '%s' "Linking zshenv to ${HOME}"
     run_cmd ln -sf "${script_path}/zsh/.zshenv" "${HOME}"
@@ -167,8 +166,15 @@ setup_zsh() {
     # install plugins for zsh
     printf '%s\n' 'Setting up plugins for ZSH'
     for plugin in ${zsh_plugins}; do
-        printf '%s' "  Cloning ${plugin}"
-        run_cmd git -C "${zsh_dest_plugins}" clone "${plugin}"
+        plugin_name="$(basename "${plugin}")"
+        plugin_dir="${zsh_dest_plugins}/${plugin_name}"
+
+        if [ -d "${plugin_dir}" ]; then
+            printf '%s\n' "  Skipping ${plugin} (already exists)"
+        else
+            printf '%s' "  Cloning ${plugin}"
+            run_cmd git -C "${zsh_dest_plugins}" clone "${plugin}"
+        fi
     done
 
     # install oh-my-posh
@@ -199,14 +205,16 @@ update_zsh() {
 atuin_src="${script_path}/atuin"
 
 setup_atuin() {
-    if [ -d "${HOME}/.atuin" ]; then
-        printf '%s\n' "${HOME}/.atuin already exists. Run 'dot update atuin' to update."
-        exit 1
+    if [ -x "${HOME}/.atuin/bin/atuin" ]; then
+        printf '%s\n' "Atuin already installed at ${HOME}/.atuin/bin/atuin. Skipping install."
+    else
+        printf '%s' 'Installing atuin'
+        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
+        status
     fi
 
-    printf '%s' 'Installing atuin'
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
-    status
+    printf '%s' 'Creating ~/.local/bin directory'
+    run_cmd mkdir -p "${HOME}/.local/bin"
 
     # symlink to ~/.local/bin so atuin is available in tmux popups
     # (tmux global PATH doesn't include ~/.atuin/bin)
@@ -266,11 +274,36 @@ update_karabiner() {
 }
 
 main() {
-    case "${2}" in
-        dot|atuin|karabiner) ;;
-        *) check_if_installed_and_exit "${2}" ;;
+    if [ "${#}" -ne 2 ]; then
+        usage
+        exit 1
+    fi
+
+    action="${1}"
+    app="${2}"
+
+    case "${action}" in
+        setup|update) ;;
+        *)
+            usage
+            exit 1
+            ;;
     esac
-    ${1}_${2}
+
+    case "${app}" in
+        dot|tmux|zsh|atuin|ssh|karabiner) ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+
+    case "${app}" in
+        dot|atuin|karabiner) ;;
+        *) check_if_installed_and_exit "${app}" ;;
+    esac
+
+    "${action}_${app}"
 }
 
 main "${@}"

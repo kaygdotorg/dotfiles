@@ -42,7 +42,23 @@ dot setup ssh
 dot setup karabiner  # macOS only, requires npx
 ```
 
-Each `dot setup <app>` command creates the necessary directories, symlinks configuration files from this repository into the correct system paths, and installs any dependencies (plugins, binaries, etc.). Running setup again is safe — it will either skip what already exists or overwrite symlinks.
+Each `dot setup <app>` command creates the necessary directories, symlinks configuration files from this repository into the correct system paths, and installs any dependencies (plugins, binaries, etc.). Running setup again is safe: existing symlinks are overwritten, existing zsh plugins are skipped, and existing Atuin installs are reused.
+
+### Command format and validation
+
+The `dot` CLI accepts exactly two arguments:
+
+```bash
+dot <setup|update> <dot|tmux|zsh|atuin|ssh|karabiner>
+```
+
+If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
+
+### Re-running setup commands
+
+- `dot setup zsh` reuses the existing install directory and skips plugin repos that are already present.
+- `dot setup atuin` reuses an existing `~/.atuin/bin/atuin` installation, ensures `~/.local/bin` exists, and then refreshes the symlink/config.
+- `dot setup dot`, `dot setup tmux`, and `dot setup ssh` are symlink-based and can be run repeatedly.
 
 ## Apps
 
