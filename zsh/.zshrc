@@ -37,7 +37,12 @@ fi
 # ============================================================================
 # Only auto-start tmux in interactive shells (not iOS/Shellfish scp, etc.)
 if [[ $- == *i* ]] && [[ -z "${TMUX}" ]] && [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
-    exec tmux new-session -As work
+    # Attach to the most recent session if one exists, otherwise create "work"
+    if tmux has-session 2>/dev/null; then
+        exec tmux attach-session
+    else
+        exec tmux new-session -s work
+    fi
 fi
 
 # ============================================================================
