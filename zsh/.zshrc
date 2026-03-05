@@ -57,6 +57,7 @@ setopt hist_expire_dups_first  # Delete duplicates first when HISTFILE exceeds H
 setopt hist_ignore_dups        # Ignore duplicated commands in history list
 setopt hist_ignore_space       # Ignore commands that start with space
 setopt hist_verify             # Show command before executing from history
+setopt hist_reduce_blanks      # Remove superfluous blanks from history entries
 setopt inc_append_history      # Add commands incrementally, not just at exit
 setopt share_history           # Share command history between sessions
 
