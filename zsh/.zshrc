@@ -98,6 +98,10 @@ setopt pushdminus              # Swap + and - for pushd
 setopt correct                 # Enable command auto-correction
 setopt multios                 # Allow multiple redirections
 setopt interactivecomments     # Allow comments in interactive shell
+setopt no_beep                 # Disable terminal bell on errors
+
+# Word characters: remove / so Ctrl+W and Alt+B/F stop at path separators
+WORDCHARS=${WORDCHARS//[\/]/}
 
 # ============================================================================
 # Vi Mode
@@ -146,15 +150,6 @@ autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
 add-zsh-hook chpwd chpwd_recent_dirs
 
 # ============================================================================
-# PLATFORM-SPECIFIC SETTINGS
-# ============================================================================
-
-# WSL2 X11 over VSOCK (Linux only) - for running Linux GUI apps on Windows
-if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
-    export DISPLAY=:0
-fi
-
-# ============================================================================
 # ALIASES
 # ============================================================================
 
@@ -180,7 +175,9 @@ check_if_installed fd && alias find=fd     # Fast, user-friendly find
 check_if_installed rg && alias grep=rg     # Fast recursive grep
 
 # macOS DNS cache flush
-alias flush_dns='sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+if [[ "${OSTYPE}" == "darwin"* ]]; then
+    alias flush_dns='sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+fi
 
 # ============================================================================
 # EXTERNAL TOOL INTEGRATIONS
@@ -287,4 +284,4 @@ zle-line-init() { print -n '\e[6 q' }
 zle -N zle-line-init
 
 # bun completions
-[ -s "${HOME}/.bun/_bun" ] && source "${HOME}/.bun/_bun"
+[[ -s "${HOME}/.bun/_bun" ]] && source "${HOME}/.bun/_bun"
