@@ -174,9 +174,11 @@ check_if_installed eza && alias ls=eza     # Modern ls with git integration
 check_if_installed fd && alias find=fd     # Fast, user-friendly find
 check_if_installed rg && alias grep=rg     # Fast recursive grep
 
-# macOS DNS cache flush
+# DNS cache flush (OS-specific)
 if [[ "${OSTYPE}" == "darwin"* ]]; then
     alias flush_dns='sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+elif [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+    alias flush_dns='sudo systemd-resolve --flush-caches 2>/dev/null || sudo resolvectl flush-caches'
 fi
 
 # ============================================================================
