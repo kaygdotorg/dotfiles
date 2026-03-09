@@ -110,6 +110,19 @@ WORDCHARS=${WORDCHARS//[\/]/}
 bindkey -v
 export KEYTIMEOUT=1
 
+# Emacs-style shortcuts in vi insert mode (viins)
+# These keys are unbound (self-insert) by default in vi mode, so no conflicts.
+bindkey -M viins '^A' beginning-of-line
+bindkey -M viins '^E' end-of-line
+bindkey -M viins '^F' forward-char
+bindkey -M viins '^B' backward-char
+bindkey -M viins '^N' down-history
+bindkey -M viins '^P' up-history
+bindkey -M viins '^K' kill-line
+bindkey -M viins '^U' kill-whole-line
+bindkey -M viins '^W' backward-kill-word
+bindkey -M viins '^D' delete-char-or-list
+
 # ============================================================================
 # Plugins
 # ============================================================================
