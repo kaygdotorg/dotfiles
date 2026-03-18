@@ -5,9 +5,11 @@
 # Base PATH: user local binaries take precedence
 export PATH="${HOME}/.local/bin:${PATH}"
 
-# macOS Homebrew (Apple Silicon) - only on macOS and only if installed
+# Homebrew - macOS (Apple Silicon) or Linux
 if [[ "${OSTYPE}" == "darwin"* && -d "/opt/homebrew/bin" ]]; then
-    export PATH="/opt/homebrew/bin:${PATH}"
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -d "/home/linuxbrew/.linuxbrew/bin" ]]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 fi
 
 # Spicetify (Spotify CLI) - only if installed
