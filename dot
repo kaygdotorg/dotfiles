@@ -180,7 +180,6 @@ setup_zsh() {
     # install oh-my-posh
     printf '%s' 'Installing oh-my-posh'
     curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null
-    status
 
     # linking configuration
     printf '%s' 'Linking personal configuration'
