@@ -58,58 +58,17 @@ run_cmd() {
     fi
 }
 
-# run_cmd_with_log(): run commands while redirecting STDOUT and STDERR and
-# displaying a user-friendly "done" or "failed" after the displayed message.
-#
-# use:
-#   run_cmd logfile cmd
-run_cmd_with_log() {
-    if [ "${#}" -eq 0 ]; then
-        printf '%s\n' "No arguments provided. Exiting."
-        exit 1
-    fi
-
-    # get the absolute path of the first argument provided, i.e the file to log
-    # stdout and stderr to
-    logfile="$(realpath "${1}")"
-
-    # shift parameters by 1 to the right
-    # $1=a $2=b $3=c
-    #
-    # become:
-    #
-    # $1=b $2=c $3=
-    shift 1
-
-    # reuse code in the run_cmd function
-    run_cmd "${@}"
-}
-
-# status(): display a tick if the last command succeeded or a cross if the last
-# command failed. this is done by cheching the exit code, which if non-zero
-# indicates erroneous exit. basically, a drop-in replacement for `run_cmd()`
-# where it cannot be used, for example: commands that need to be run with `sudo`
-# or `doas`.
-#
-# use:
-#   status
-status() {
-    if [ "${?}" = "0" ]; then
-        printf " done\n"
-    else
-        printf " failed\n"
-        exit 1
-    fi
-}
-
 # script local variables
 script_path="$(dirname "$(realpath "${0}")")"
 
 # dot
 # Linking: dot → ~/.local/bin/dot
 setup_dot() {
+    printf '%s' "Creating ${HOME}/.local/bin"
+    run_cmd mkdir -p "${HOME}/.local/bin"
+
     printf '%s' "Adding dot to ${HOME}/.local/bin"
-    run_cmd mkdir -p "${HOME}/.local/bin" && ln -sf "${script_path}/dot" "${HOME}/.local/bin"
+    run_cmd ln -sf "${script_path}/dot" "${HOME}/.local/bin"
 }
 
 update_dot() {
@@ -123,14 +82,20 @@ update_dot() {
 tmux_src="${script_path}/tmux"
 
 setup_tmux() {
-    printf '%s' "Linking tmux configuration"
-    run_cmd mkdir -p "${HOME}/.config/tmux" && ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.config/tmux/tmux.conf"
+    printf '%s' "Creating tmux configuration directory"
+    run_cmd mkdir -p "${HOME}/.config/tmux"
 
-    printf '%s' "Installing tpm (tmux plugin manager)"
+    printf '%s' "Linking tmux configuration"
+    run_cmd ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.config/tmux/tmux.conf"
+
     if [ -d "${HOME}/.config/tmux/plugins/tpm" ]; then
-        printf ' skipped (already exists: %s)\n' "${HOME}/.config/tmux/plugins/tpm"
+        printf 'Installing tpm (tmux plugin manager) skipped (already exists: %s)\n' "${HOME}/.config/tmux/plugins/tpm"
     else
-        run_cmd mkdir -p "${HOME}/.config/tmux/plugins" && git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.config/tmux/plugins/tpm"
+        printf '%s' "Creating tmux plugins directory"
+        run_cmd mkdir -p "${HOME}/.config/tmux/plugins"
+
+        printf '%s' "Installing tpm (tmux plugin manager)"
+        run_cmd git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.config/tmux/plugins/tpm"
     fi
 }
 
@@ -153,6 +118,35 @@ zsh_plugins="
     https://github.com/zsh-users/zsh-history-substring-search
     https://github.com/zsh-users/zsh-syntax-highlighting
 "
+
+install_oh_my_posh() {
+    printf '%s' 'Installing oh-my-posh'
+
+    missing_cmds=""
+    for cmd in curl bash unzip realpath dirname mktemp; do
+        if ! check_if_installed "${cmd}"; then
+            missing_cmds="${missing_cmds} ${cmd}"
+        fi
+    done
+
+    if [ -n "${missing_cmds}" ]; then
+        printf ' skipped (missing:%s)\n' "${missing_cmds}"
+        return 0
+    fi
+
+    mkdir -p "${HOME}/.local/bin"
+
+    installer="$(mktemp)"
+    if curl -LsSf https://ohmyposh.dev/install.sh -o "${installer}" \
+        && bash "${installer}" -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null; then
+        rm -f "${installer}"
+        printf " done\n"
+    else
+        rm -f "${installer}"
+        printf " failed\n"
+        exit 1
+    fi
+}
 
 setup_zsh() {
     # symlink zshenv to $HOME so zsh picks up ZDOTDIR
@@ -177,13 +171,16 @@ setup_zsh() {
         fi
     done
 
-    # install oh-my-posh
-    printf '%s' 'Installing oh-my-posh'
-    curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null
-
     # linking configuration
-    printf '%s' 'Linking personal configuration'
-    run_cmd ln -sf "${zsh_src}/.zshrc" "${zsh_dest_zsh}" && ln -sf "${zsh_src}/omp.yaml" "${zsh_dest_zsh}"
+    printf '%s' 'Linking zsh configuration'
+    run_cmd ln -sf "${zsh_src}/.zshrc" "${zsh_dest_zsh}"
+
+    printf '%s' 'Linking oh-my-posh configuration'
+    run_cmd ln -sf "${zsh_src}/omp.yaml" "${zsh_dest_zsh}"
+
+    # install oh-my-posh after config links so zsh remains usable if a dependency
+    # such as unzip is missing.
+    install_oh_my_posh
 }
 
 update_zsh() {
@@ -193,9 +190,7 @@ update_zsh() {
         run_cmd git -C "${plugin}" pull
     done
 
-    printf '%s' 'Updating oh-my-posh'
-    curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null
-    status
+    install_oh_my_posh
 }
 
 # atuin
@@ -203,15 +198,27 @@ update_zsh() {
 #          atuin binary linked  ~/.local/bin/atuin
 atuin_src="${script_path}/atuin"
 
-setup_atuin() {
-    if [ -x "${HOME}/.atuin/bin/atuin" ]; then
-        printf '%s\n' "Atuin already installed at ${HOME}/.atuin/bin/atuin. Skipping install."
-    else
-        printf '%s' 'Installing atuin'
-        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
-        status
-    fi
+install_atuin() {
+    printf '%s' "${1}"
 
+    check_if_installed_and_exit curl
+    check_if_installed_and_exit mktemp
+
+    installer="$(mktemp)"
+    if curl --proto '=https' --tlsv1.2 -LsSf \
+        https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh \
+        -o "${installer}" \
+        && sh "${installer}" --no-modify-path --quiet 1>/dev/null 2>/dev/null; then
+        rm -f "${installer}"
+        printf " done\n"
+    else
+        rm -f "${installer}"
+        printf " failed\n"
+        exit 1
+    fi
+}
+
+link_atuin() {
     printf '%s' 'Creating ~/.local/bin directory'
     run_cmd mkdir -p "${HOME}/.local/bin"
 
@@ -220,8 +227,21 @@ setup_atuin() {
     printf '%s' 'Linking atuin to ~/.local/bin'
     run_cmd ln -sf "${HOME}/.atuin/bin/atuin" "${HOME}/.local/bin/atuin"
 
+    printf '%s' 'Creating ~/.config/atuin directory'
+    run_cmd mkdir -p "${HOME}/.config/atuin"
+
     printf '%s' 'Linking atuin configuration'
-    run_cmd mkdir -p "${HOME}/.config/atuin" && ln -sf "${atuin_src}/config.toml" "${HOME}/.config/atuin/config.toml"
+    run_cmd ln -sf "${atuin_src}/config.toml" "${HOME}/.config/atuin/config.toml"
+}
+
+setup_atuin() {
+    if [ -x "${HOME}/.atuin/bin/atuin" ]; then
+        printf '%s\n' "Atuin already installed at ${HOME}/.atuin/bin/atuin. Skipping install."
+    else
+        install_atuin 'Installing atuin'
+    fi
+
+    link_atuin
 
     printf '%s\n' 'Run the following to complete setup:'
     printf '%s\n' '  exec zsh'
@@ -231,9 +251,8 @@ setup_atuin() {
 }
 
 update_atuin() {
-    printf '%s' 'Updating atuin'
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh 1>/dev/null 2>/dev/null
-    status
+    install_atuin 'Updating atuin'
+    link_atuin
 }
 
 # ssh
@@ -244,12 +263,18 @@ ssh_dest="${HOME}/.ssh"
 setup_ssh() {
     # create ~/.ssh directory with correct permissions
     printf '%s' "Creating ${ssh_dest} directory"
-    run_cmd mkdir -p "${ssh_dest}" && chmod 700 "${ssh_dest}"
+    run_cmd mkdir -p "${ssh_dest}"
+
+    printf '%s' "Setting ${ssh_dest} permissions"
+    run_cmd chmod 700 "${ssh_dest}"
 
     # link ssh config
     if [ -f "${ssh_src}/config" ]; then
         printf '%s' "Linking SSH config"
-        run_cmd ln -sf "${ssh_src}/config" "${ssh_dest}/config" && chmod 600 "${ssh_dest}/config"
+        run_cmd ln -sf "${ssh_src}/config" "${ssh_dest}/config"
+
+        printf '%s' "Setting SSH config permissions"
+        run_cmd chmod 600 "${ssh_dest}/config"
     else
         printf '%s\n' "Warning: ${ssh_src}/config does not exist. Skipping config setup."
     fi
