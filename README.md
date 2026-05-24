@@ -6,20 +6,20 @@ Configuration files and a management script for a personalized development envir
 
 ### Clone
 
-Clone the repository to any path you like. I keep mine at `${HOME}/.config/dotfiles`.
+Clone the repository to any path you like. I keep mine at `${HOME}/Developer/dotfiles`.
 
 The repository is mirrored on both GitHub and a self-hosted GitLab instance:
 
 #### GitHub (primary)
 
 ```bash
-git clone https://github.com/kaygdotorg/dotfiles.git "${HOME}/.config/dotfiles"
+git clone https://github.com/kaygdotorg/dotfiles.git "${HOME}/Developer/dotfiles"
 ```
 
 #### Self-hosted GitLab (mirror)
 
 ```bash
-git clone https://git.kayg.org/kayg/dotfiles.git "${HOME}/.config/dotfiles"
+git clone https://git.kayg.org/kayg/dotfiles.git "${HOME}/Developer/dotfiles"
 ```
 
 Both remotes are kept in sync. Use whichever is more convenient or accessible.
@@ -29,7 +29,7 @@ Both remotes are kept in sync. Use whichever is more convenient or accessible.
 The `dot` script handles all linking and installation. Start by symlinking it into your PATH:
 
 ```bash
-"${HOME}/.config/dotfiles/dot" setup dot
+"${HOME}/Developer/dotfiles/scripts/dot" setup dot
 ```
 
 Then set up whichever apps you need:
@@ -74,7 +74,9 @@ Configuration files are stored flat under each app's directory. The `dot` script
 
 ```
 .
-├── dot                      # Setup and management script (POSIX sh)
+├── scripts/
+│   ├── dot                  # Setup and management script (POSIX sh)
+│   └── toggle-menu-bar-visibility.applescript
 ├── zsh/
 │   ├── .zshenv              # Sets ZDOTDIR so zsh finds its config
 │   ├── .zshrc               # Main shell configuration
@@ -85,10 +87,8 @@ Configuration files are stored flat under each app's directory. The `dot` script
 │   └── config.toml          # Atuin shell history configuration
 ├── .ssh/
 │   └── config               # SSH client configuration
-├── karabiner-ts/
-│   └── index.ts             # Generates Karabiner-Elements JSON profile
-└── scripts/
-    └── toggle-menu-bar-visibility.applescript
+└── karabiner-ts/
+    └── index.ts             # Generates Karabiner-Elements JSON profile
 ```
 
 ### Linking map
@@ -105,7 +105,7 @@ graph LR
         E["atuin/config.toml"]
         F[".ssh/config"]
         G["karabiner-ts/index.ts"]
-        H["dot"]
+        H["scripts/dot"]
     end
 
     subgraph System

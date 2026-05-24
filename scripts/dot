@@ -60,9 +60,10 @@ run_cmd() {
 
 # script local variables
 script_path="$(dirname "$(realpath "${0}")")"
+repo_path="$(dirname "${script_path}")"
 
 # dot
-# Linking: dot → ~/.local/bin/dot
+# Linking: scripts/dot → ~/.local/bin/dot
 setup_dot() {
     printf '%s' "Creating ${HOME}/.local/bin"
     run_cmd mkdir -p "${HOME}/.local/bin"
@@ -73,13 +74,13 @@ setup_dot() {
 
 update_dot() {
     printf '%s' "Updating dotfiles repository"
-    run_cmd git -C "${script_path}" pull
+    run_cmd git -C "${repo_path}" pull
 }
 
 # tmux
 # Linking: tmux/.tmux.conf → ~/.config/tmux/tmux.conf
 #          tpm cloned into   ~/.config/tmux/plugins/tpm
-tmux_src="${script_path}/tmux"
+tmux_src="${repo_path}/tmux"
 
 setup_tmux() {
     printf '%s' "Creating tmux configuration directory"
@@ -109,7 +110,7 @@ update_tmux() {
 #          zsh/omp.yaml → ~/.config/zsh/omp.yaml
 #          plugins cloned into ~/.config/zsh/plugins/
 #          oh-my-posh installed to ~/.local/bin/
-zsh_src="${script_path}/zsh"
+zsh_src="${repo_path}/zsh"
 zsh_dest_zsh="${HOME}/.config/zsh"
 zsh_dest_plugins="${HOME}/.config/zsh/plugins"
 zsh_plugins="
@@ -151,7 +152,7 @@ install_oh_my_posh() {
 setup_zsh() {
     # symlink zshenv to $HOME so zsh picks up ZDOTDIR
     printf '%s' "Linking zshenv to ${HOME}"
-    run_cmd ln -sf "${script_path}/zsh/.zshenv" "${HOME}"
+    run_cmd ln -sf "${zsh_src}/.zshenv" "${HOME}"
 
     # create plugin and cache directories
     printf '%s' "Creating plugin and cache directories"
@@ -196,7 +197,7 @@ update_zsh() {
 # atuin
 # Linking: atuin/config.toml → ~/.config/atuin/config.toml
 #          atuin binary linked  ~/.local/bin/atuin
-atuin_src="${script_path}/atuin"
+atuin_src="${repo_path}/atuin"
 
 install_atuin() {
     printf '%s' "${1}"
@@ -257,7 +258,7 @@ update_atuin() {
 
 # ssh
 # Linking: .ssh/config → ~/.ssh/config
-ssh_src="${script_path}/.ssh"
+ssh_src="${repo_path}/.ssh"
 ssh_dest="${HOME}/.ssh"
 
 setup_ssh() {
@@ -284,7 +285,7 @@ setup_ssh() {
 
 # karabiner (macOS only)
 # Generates: ~/.config/karabiner/karabiner.json (via writeToProfile)
-karabiner_src="${script_path}/karabiner-ts"
+karabiner_src="${repo_path}/karabiner-ts"
 
 setup_karabiner() {
     check_if_installed_and_exit npx
