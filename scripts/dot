@@ -35,8 +35,14 @@ check_if_installed_and_exit() {
     fi
 }
 
-# run_cmd(): run commands while suppressing both the output and error streams
-# and displaying a user-friendly "done" or "failed".
+# where run_cmd keeps command output. Set DOT_LOG to keep a transcript of every
+# command; otherwise output is captured per-command and shown only on failure.
+logfile="${DOT_LOG:-}"
+
+# run_cmd(): run a command quietly, printing a user-friendly "done" or "failed".
+#
+# Output is captured rather than discarded: a failing command prints what it
+# said before exiting, so "failed" is never the only thing you get.
 #
 # use:
 #   run_cmd cmd
@@ -46,15 +52,43 @@ run_cmd() {
         exit 1
     fi
 
-    # if ${logfile} is UNSET or EMPTY, set the value to the string "/dev/null"
-    output_stream="${logfile:-/dev/null}"
-    error_stream="${logfile:-/dev/null}"
+    capture="$(mktemp)"
 
-    if "$@" 1>"${output_stream}" 2>"${error_stream}"; then
+    if "$@" 1>"${capture}" 2>&1; then
         printf " done\n"
+        save_log "${capture}"
+        rm -f "${capture}"
     else
         printf " failed\n"
+        printf '%s\n' "  command: $*"
+        sed 's/^/  | /' "${capture}"
+        save_log "${capture}"
+        rm -f "${capture}"
         exit 1
+    fi
+}
+
+# save_log(): append a captured transcript to ${logfile}, if one was requested.
+#
+# use:
+#   save_log /path/to/capture
+save_log() {
+    if [ -n "${logfile}" ]; then
+        cat "${1}" >> "${logfile}"
+    fi
+}
+
+# backup_if_real(): move a pre-existing regular file or directory out of the
+# way before it is replaced by a symlink. `ln -sf` would overwrite it silently,
+# which on a fresh machine means losing a distro-provided config with no copy.
+# Existing symlinks are left alone — those are ours to replace.
+#
+# use:
+#   backup_if_real /path/that/is/about/to/become/a/symlink
+backup_if_real() {
+    if [ -e "${1}" ] && [ ! -L "${1}" ]; then
+        printf '%s' "Backing up existing ${1}"
+        run_cmd mv "${1}" "${1}.bak.$(date +%Y%m%d%H%M%S)"
     fi
 }
 
@@ -68,8 +102,10 @@ setup_dot() {
     printf '%s' "Creating ${HOME}/.local/bin"
     run_cmd mkdir -p "${HOME}/.local/bin"
 
+    backup_if_real "${HOME}/.local/bin/dot"
+
     printf '%s' "Adding dot to ${HOME}/.local/bin"
-    run_cmd ln -sf "${script_path}/dot" "${HOME}/.local/bin"
+    run_cmd ln -sf "${script_path}/dot" "${HOME}/.local/bin/dot"
 }
 
 update_dot() {
@@ -78,16 +114,29 @@ update_dot() {
 }
 
 # tmux
-# Linking: tmux/.tmux.conf → ~/.config/tmux/tmux.conf
-#          tpm cloned into   ~/.config/tmux/plugins/tpm
+# Linking: tmux/.tmux.conf     → ~/.config/tmux/tmux.conf
+#          tmux/cheatsheet.sh  → ~/.config/tmux/cheatsheet.sh
+#          tmux/client-tune.sh → ~/.config/tmux/client-tune.sh
+#          tpm cloned into       ~/.config/tmux/plugins/tpm
 tmux_src="${repo_path}/tmux"
 
 setup_tmux() {
     printf '%s' "Creating tmux configuration directory"
     run_cmd mkdir -p "${HOME}/.config/tmux"
 
+    backup_if_real "${HOME}/.config/tmux/tmux.conf"
+
     printf '%s' "Linking tmux configuration"
     run_cmd ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.config/tmux/tmux.conf"
+
+    # helper scripts the config shells out to (cheatsheet popup, per-client
+    # tuning on attach)
+    for helper in cheatsheet.sh client-tune.sh; do
+        backup_if_real "${HOME}/.config/tmux/${helper}"
+
+        printf '%s' "Linking tmux ${helper}"
+        run_cmd ln -sf "${tmux_src}/${helper}" "${HOME}/.config/tmux/${helper}"
+    done
 
     if [ -d "${HOME}/.config/tmux/plugins/tpm" ]; then
         printf 'Installing tpm (tmux plugin manager) skipped (already exists: %s)\n' "${HOME}/.config/tmux/plugins/tpm"
@@ -151,8 +200,10 @@ install_oh_my_posh() {
 
 setup_zsh() {
     # symlink zshenv to $HOME so zsh picks up ZDOTDIR
+    backup_if_real "${HOME}/.zshenv"
+
     printf '%s' "Linking zshenv to ${HOME}"
-    run_cmd ln -sf "${zsh_src}/.zshenv" "${HOME}"
+    run_cmd ln -sf "${zsh_src}/.zshenv" "${HOME}/.zshenv"
 
     # create plugin and cache directories
     printf '%s' "Creating plugin and cache directories"
@@ -173,11 +224,15 @@ setup_zsh() {
     done
 
     # linking configuration
+    backup_if_real "${zsh_dest_zsh}/.zshrc"
+
     printf '%s' 'Linking zsh configuration'
-    run_cmd ln -sf "${zsh_src}/.zshrc" "${zsh_dest_zsh}"
+    run_cmd ln -sf "${zsh_src}/.zshrc" "${zsh_dest_zsh}/.zshrc"
+
+    backup_if_real "${zsh_dest_zsh}/omp.yaml"
 
     printf '%s' 'Linking oh-my-posh configuration'
-    run_cmd ln -sf "${zsh_src}/omp.yaml" "${zsh_dest_zsh}"
+    run_cmd ln -sf "${zsh_src}/omp.yaml" "${zsh_dest_zsh}/omp.yaml"
 
     # install oh-my-posh after config links so zsh remains usable if a dependency
     # such as unzip is missing.
@@ -187,6 +242,10 @@ setup_zsh() {
 update_zsh() {
     printf '%s\n' 'Updating plugins'
     for plugin in "${zsh_dest_plugins}"/*; do
+        # an empty plugins directory leaves the glob unexpanded, and anything
+        # that is not a clone has nothing to pull
+        [ -d "${plugin}/.git" ] || continue
+
         printf '%s' "  Updating $(basename "${plugin}")"
         run_cmd git -C "${plugin}" pull
     done
@@ -225,11 +284,15 @@ link_atuin() {
 
     # symlink to ~/.local/bin so atuin is available in tmux popups
     # (tmux global PATH doesn't include ~/.atuin/bin)
+    backup_if_real "${HOME}/.local/bin/atuin"
+
     printf '%s' 'Linking atuin to ~/.local/bin'
     run_cmd ln -sf "${HOME}/.atuin/bin/atuin" "${HOME}/.local/bin/atuin"
 
     printf '%s' 'Creating ~/.config/atuin directory'
     run_cmd mkdir -p "${HOME}/.config/atuin"
+
+    backup_if_real "${HOME}/.config/atuin/config.toml"
 
     printf '%s' 'Linking atuin configuration'
     run_cmd ln -sf "${atuin_src}/config.toml" "${HOME}/.config/atuin/config.toml"
@@ -269,8 +332,17 @@ setup_ssh() {
     printf '%s' "Setting ${ssh_dest} permissions"
     run_cmd chmod 700 "${ssh_dest}"
 
+    # ControlPath sockets for connection multiplexing (see Host * in the config)
+    printf '%s' "Creating ${ssh_dest}/sockets directory"
+    run_cmd mkdir -p "${ssh_dest}/sockets"
+
+    printf '%s' "Setting ${ssh_dest}/sockets permissions"
+    run_cmd chmod 700 "${ssh_dest}/sockets"
+
     # link ssh config
     if [ -f "${ssh_src}/config" ]; then
+        backup_if_real "${ssh_dest}/config"
+
         printf '%s' "Linking SSH config"
         run_cmd ln -sf "${ssh_src}/config" "${ssh_dest}/config"
 
@@ -280,7 +352,26 @@ setup_ssh() {
         printf '%s\n' "Warning: ${ssh_src}/config does not exist. Skipping config setup."
     fi
 
+    # ~/.ssh/config.local holds hosts that should not be published to a public
+    # repository. It is Included first, so anything in it also overrides the
+    # tracked defaults (ssh keeps the first value it obtains for a keyword).
+    if [ ! -f "${ssh_src}/config.local.example" ]; then
+        printf '%s\n' "Warning: ${ssh_src}/config.local.example is missing. Skipping config.local."
+    elif [ -f "${ssh_dest}/config.local" ]; then
+        printf '%s\n' "Keeping existing ${ssh_dest}/config.local"
+    else
+        printf '%s' "Seeding ${ssh_dest}/config.local"
+        run_cmd cp "${ssh_src}/config.local.example" "${ssh_dest}/config.local"
+
+        printf '%s' "Setting ${ssh_dest}/config.local permissions"
+        run_cmd chmod 600 "${ssh_dest}/config.local"
+    fi
+
     printf '%s\n' "SSH setup complete. Make sure your SSH keys are in ${ssh_dest}/"
+}
+
+update_ssh() {
+    setup_ssh
 }
 
 # karabiner (macOS only)
@@ -288,6 +379,13 @@ setup_ssh() {
 karabiner_src="${repo_path}/karabiner-ts"
 
 setup_karabiner() {
+    # Karabiner-Elements is macOS only; generating a profile anywhere else just
+    # writes a file nothing will ever read.
+    if [ "$(uname -s)" != "Darwin" ]; then
+        printf '%s\n' "Karabiner-Elements is macOS only. Nothing to do on $(uname -s)."
+        exit 1
+    fi
+
     check_if_installed_and_exit npx
 
     printf '%s' "Generating Karabiner-Elements configuration"

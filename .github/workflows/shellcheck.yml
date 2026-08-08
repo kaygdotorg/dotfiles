@@ -1,0 +1,40 @@
+name: shellcheck
+
+# Lints the POSIX sh in this repository. `dot update ssh` shipped broken
+# (calling an update_ssh that was never defined) because nothing checked.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint scripts
+        # SC2317 (unreachable command) is excluded: `dot` dispatches through
+        # "${action}_${app}", so every setup_*/update_* function looks unused
+        # to static analysis. The next step covers that dispatch instead.
+        run: shellcheck --shell=sh --exclude=SC2317 scripts/dot tmux/cheatsheet.sh tmux/client-tune.sh
+
+      - name: Check every dispatchable app has both actions
+        # `dot <action> <app>` dispatches to "${action}_${app}" — a missing
+        # function is only discovered at runtime, as exit 127.
+        run: |
+          status=0
+          for app in dot tmux zsh atuin ssh karabiner; do
+            for action in setup update; do
+              if ! grep -q "^${action}_${app}()" scripts/dot; then
+                echo "missing function: ${action}_${app}()"
+                status=1
+              fi
+            done
+          done
+          exit "${status}"
