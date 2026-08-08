@@ -1,6 +1,7 @@
 #!/bin/sh
 #
-# Per-client tmux tuning — run from the `client-attached` hook in tmux.conf.
+# Per-client tmux tuning — run from the `client-attached` and
+# `client-session-changed` hooks in tmux.conf.
 #
 # WHY THIS IS NOT `if-shell` IN THE CONFIG:
 #   if-shell evaluates its command against the tmux SERVER's environment, which

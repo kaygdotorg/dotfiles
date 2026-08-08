@@ -321,6 +321,7 @@ update_atuin() {
 
 # ssh
 # Linking: .ssh/config → ~/.ssh/config
+# Copying: .ssh/config.local.example → ~/.ssh/config.local  (first time only)
 ssh_src="${repo_path}/.ssh"
 ssh_dest="${HOME}/.ssh"
 
