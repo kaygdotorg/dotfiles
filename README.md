@@ -6,7 +6,7 @@ Configuration files and a management script for a personalized development envir
 
 ### Clone
 
-Clone the repository to any path you like. I keep mine at `${HOME}/Developer/dotfiles`.
+Clone the repository to any path you like — the `dot` script resolves its own location, so nothing depends on where it lives. The examples below use `${HOME}/Developer/dotfiles`.
 
 The repository is mirrored on both GitHub and a self-hosted GitLab instance:
 
@@ -44,6 +44,14 @@ dot setup karabiner  # macOS only, requires npx
 
 Each `dot setup <app>` command creates the necessary directories, symlinks configuration files from this repository into the correct system paths, and installs any dependencies (plugins, binaries, etc.). Running setup again is safe: existing symlinks are overwritten, existing zsh plugins are skipped, and existing Atuin installs are reused.
 
+**Pre-existing files are never destroyed.** If a real file (rather than one of our symlinks) already sits at a destination — a distro-provided `~/.zshenv`, an `~/.ssh/config` you wrote by hand — it is moved to `<file>.bak.<timestamp>` before the symlink is created, and the backup is announced as it happens.
+
+**When something fails**, `dot` prints the failing command and its output rather than a bare `failed`. Set `DOT_LOG` to also keep a transcript of every command:
+
+```bash
+DOT_LOG=/tmp/dot.log dot setup zsh
+```
+
 ### Command format and validation
 
 The `dot` CLI accepts exactly two arguments:
@@ -59,13 +67,15 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - `dot setup zsh` reuses the existing install directory and skips plugin repos that are already present.
 - `dot setup atuin` reuses an existing `~/.atuin/bin/atuin` installation, ensures `~/.local/bin` exists, and then refreshes the symlink/config.
 - `dot setup dot`, `dot setup tmux`, and `dot setup ssh` are symlink-based and can be run repeatedly.
+- `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten.
+- `dot setup karabiner` refuses to run anywhere but macOS.
 
 ## Apps
 
 - **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
-- **Tmux** — Standalone configuration with Catppuccin Mocha theme, OSC 52 clipboard support for nested sessions, vi-mode copy bindings, mouse support, F12 pass-through toggle for nested sessions, searchable keybindings cheatsheet (`prefix + ?`), and [TPM](https://github.com/tmux-plugins/tpm) for plugin management.
+- **Tmux** — Standalone configuration with Catppuccin Mocha theme, OSC 52 clipboard support for nested sessions, vi-mode copy bindings, mouse support, `F12`/`M-F` pass-through toggle for nested sessions, searchable keybindings cheatsheet (`prefix + ?`), per-client tuning on attach, and [TPM](https://github.com/tmux-plugins/tpm) for plugin management.
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
-- **SSH** — Managed SSH client configuration.
+- **SSH** — Managed SSH client configuration, tuned for mobile links (keepalives, connection multiplexing), with machine-local hosts kept out of the repository in `~/.ssh/config.local`.
 - **Karabiner** — Advanced keyboard customization via [karabiner.ts](https://github.com/evan-liu/karabiner.ts) with Colemak-DH layout and hyper key layers.
 
 ## Repository Structure
@@ -74,6 +84,8 @@ Configuration files are stored flat under each app's directory. The `dot` script
 
 ```
 .
+├── .github/workflows/
+│   └── shellcheck.yml       # Lints the sh scripts; checks dot's dispatch table
 ├── scripts/
 │   ├── dot                  # Setup and management script (POSIX sh)
 │   └── toggle-menu-bar-visibility.applescript
@@ -82,11 +94,14 @@ Configuration files are stored flat under each app's directory. The `dot` script
 │   ├── .zshrc               # Main shell configuration
 │   └── omp.yaml             # Oh My Posh prompt theme
 ├── tmux/
-│   └── .tmux.conf           # Tmux configuration
+│   ├── .tmux.conf           # Tmux configuration
+│   ├── cheatsheet.sh        # prefix + ? keybindings popup
+│   └── client-tune.sh       # Per-client tuning, run on every attach
 ├── atuin/
 │   └── config.toml          # Atuin shell history configuration
 ├── .ssh/
-│   └── config               # SSH client configuration
+│   ├── config               # SSH client configuration
+│   └── config.local.example # Template for machine-local hosts (untracked)
 └── karabiner-ts/
     └── index.ts             # Generates Karabiner-Elements JSON profile
 ```
@@ -102,8 +117,11 @@ graph LR
         B["zsh/.zshrc"]
         C["zsh/omp.yaml"]
         D["tmux/.tmux.conf"]
+        D2["tmux/cheatsheet.sh"]
+        D3["tmux/client-tune.sh"]
         E["atuin/config.toml"]
         F[".ssh/config"]
+        F2[".ssh/config.local.example"]
         G["karabiner-ts/index.ts"]
         H["scripts/dot"]
     end
@@ -113,8 +131,11 @@ graph LR
         B1["~/.config/zsh/.zshrc"]
         C1["~/.config/zsh/omp.yaml"]
         D1["~/.config/tmux/tmux.conf"]
+        D21["~/.config/tmux/cheatsheet.sh"]
+        D31["~/.config/tmux/client-tune.sh"]
         E1["~/.config/atuin/config.toml"]
         F1["~/.ssh/config"]
+        F21["~/.ssh/config.local"]
         G1["~/.config/karabiner/karabiner.json"]
         H1["~/.local/bin/dot"]
     end
@@ -123,8 +144,11 @@ graph LR
     B -->|symlink| B1
     C -->|symlink| C1
     D -->|symlink| D1
+    D2 -->|symlink| D21
+    D3 -->|symlink| D31
     E -->|symlink| E1
     F -->|symlink| F1
+    F2 -->|copy once| F21
     G -->|generates| G1
     H -->|symlink| H1
 ```
@@ -149,13 +173,58 @@ graph LR
 
 See the clipboard and copy-mode sections in `tmux/.tmux.conf` for the full implementation and explanation.
 
-### Nested tmux pass-through (F12 toggle)
+### Nested tmux pass-through (F12 or M-F)
 
-When running tmux inside tmux (e.g., SSH into a remote machine that also runs tmux), key bindings are captured by the outer session. Press `F12` to toggle pass-through mode — all keys go directly to the inner tmux. The outer status bar shows a red lock indicator when pass-through is active. Press `F12` again to return to normal mode.
+When running tmux inside tmux (e.g., SSH into a remote machine that also runs tmux), key bindings are captured by the outer session. Press `F12` **or `M-F`** to toggle pass-through mode — all keys go directly to the inner tmux. The outer status bar shows a red `PASS` pill while it is active, and both keys print a confirmation message. Press either key again to return to normal mode.
+
+Two keys are bound on purpose. Apple's Magic Keyboard and Smart Keyboard Folio for iPad have **no function row**, so on an iPad `F12` is unreachable — leaving no way into pass-through and, more importantly, no way back out of it. `M-F` is Alt+Shift+F, chosen so it does not shadow readline's `M-f` (forward-word); `C-\` was avoided because it is SIGQUIT.
+
+Both keys are bound in the `root` **and** `off` key tables, because pass-through disables the prefix — the key that turns it back off cannot be a prefix binding.
+
+### Per-client tuning on attach
+
+Status bar position, refresh interval and the padding row are decided per client by `tmux/client-tune.sh`, wired to tmux's `client-attached` and `client-session-changed` hooks. The second hook matters because the tuning is stored in *session* options: without it, a session created later (`prefix + C-c`) or switched to would keep the global defaults.
+
+The hooks pass `#{client_height}` and `#{client_session}` to the script as arguments. Asking tmux from inside the script instead — an untargeted `display-message -p` — is racy: during a session change it was observed reporting the session being switched *away* from, which tuned the wrong session.
+
+This used to be three `if-shell` blocks in `tmux.conf`, which were quietly wrong. **`if-shell` evaluates against the tmux _server's_ environment, which is frozen when the server first starts.** Since `.zshrc` auto-starts tmux, the server is nearly always started by a local client — so every later attach from an iPad or over SSH was still judged "local", and `prefix + r` could not change the verdict either.
+
+The hook re-runs on every attach and reads the attaching client's own `SSH_CONNECTION`, which tmux copies into the session environment via `update-environment` (and marks as removed on a local attach). Note that `escape-time` cannot participate: it is a server option and can never vary per client, so it is set once to the mobile-safe 50ms.
 
 ### Keybindings cheatsheet (prefix + ?)
 
 Press `prefix + ?` to open a searchable, scrollable popup listing every key binding with human-readable descriptions. It covers all three key tables (prefix, root, copy mode) and includes plugin bindings. Use `/` to search, arrow keys or `j`/`k` to scroll, and `q` to close.
+
+The implementation lives in `tmux/cheatsheet.sh` rather than inline in `tmux.conf`, where it had grown into a single escaped one-liner of embedded awk that could not be reviewed or edited without counting backslashes.
+
+### iOS and iPadOS (rootshell)
+
+[rootshell](https://www.rootshell.com/) is the terminal used on iPhone and iPad. Three settings in `tmux.conf` are there because rootshell asks for them specifically:
+
+```tmux
+set -g mouse on
+set -g set-titles on
+set -g set-titles-string '#T'
+```
+
+The bare `#T` matters: rootshell names tabs from what the pane reports, so a decorated title string gives it a decorated tab name.
+
+Other things worth knowing on a phone or tablet:
+
+- **Pass-through needs `M-F`**, not `F12` — see above.
+- **Truecolor**: rootshell is [libghostty](https://ghostty.org)-based and reports `xterm-ghostty`. The config now flags `RGB` for every terminal (`terminal-features ",*:RGB"`); previously only an exact `xterm-256color` got truecolor, so the Catppuccin hexes were being quantized. If a server has no terminfo entry for `xterm-ghostty`, either install it there or set `SetEnv TERM=xterm-256color` for that host in `~/.ssh/config.local`.
+- **Two devices, one session**: `window-size latest` and `aggressive-resize on` stop a phone attaching from reflowing the panes on the desktop. `prefix + D` detaches every other client.
+- **A private view per device**: set `TMUX_CLIENT_NAME` in the terminal app's per-connection environment and `.zshrc` will attach a *grouped* session — the same windows as `work`, but with its own current window and its own size. Without it, behaviour is unchanged.
+- **The padding row is dropped on short clients** (under 30 rows), where it costs a tenth of the screen.
+- **Touch selection vs. mouse mode**: with `mouse on`, drag gestures go to tmux. `prefix + m` toggles mouse mode off if you would rather select text with a finger.
+
+### Skipping the tmux autostart
+
+`.zshrc` execs into tmux for interactive shells. It stays out of the way when it should: transfers (scp/rsync/sftp) are not interactive, and a forced command — VS Code Remote, `ssh host cmd`, editor and agent remotes — is skipped via `SSH_ORIGINAL_COMMAND`. To opt out by hand for one connection:
+
+```bash
+DOT_NO_AUTOTMUX=1 ssh somehost
+```
 
 ### Paste buffer reference view
 
