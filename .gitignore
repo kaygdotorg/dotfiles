@@ -7,6 +7,11 @@
 *.pem
 *.key
 
+# Machine-local SSH config (internal hostnames, jump hosts) — the tracked
+# template is .ssh/config.local.example
+.ssh/config.local
+.ssh/sockets/
+
 # macOS
 .DS_Store
 
