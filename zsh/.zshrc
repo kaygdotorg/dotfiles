@@ -36,11 +36,28 @@ fi
 # Why: If you accidentally run `tmux` inside an existing tmux session,
 # you get nested sessions which are confusing and hard to exit.
 # This prevents auto-starting tmux if we're already inside one.
+#
+# The guards, in order:
+#   $- == *i*             interactive only (not scp/rsync/sftp transfers)
+#   -z ${TMUX}            not already inside tmux
+#   -z ${DOT_NO_AUTOTMUX} manual escape hatch: `DOT_NO_AUTOTMUX=1 ssh host`
+#   -z ${SSH_ORIGINAL_COMMAND}
+#                         a forced command (VS Code Remote, `ssh host cmd`,
+#                         editor and agent remotes) must not be hijacked into
+#                         a tmux session — it will hang or garble its protocol
+#
+# TMUX_CLIENT_NAME: set it per device (e.g. in the terminal app's per-connection
+# environment) to get a GROUPED session — same windows as "work", but its own
+# current window and its own size. Without it the behaviour is unchanged:
+# attach to the most recent session.
 # ============================================================================
-# Only auto-start tmux in interactive shells (not iOS/Shellfish scp, etc.)
-if [[ $- == *i* ]] && [[ -z "${TMUX}" ]] && [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
-    # Attach to the most recent session if one exists, otherwise create "work"
-    if tmux has-session 2>/dev/null; then
+if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] \
+    && [[ -z "${DOT_NO_AUTOTMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]] \
+    && [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
+    if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
+        && tmux has-session -t work 2>/dev/null; then
+        exec tmux new-session -A -s "${TMUX_CLIENT_NAME}" -t work
+    elif tmux has-session 2>/dev/null; then
         exec tmux attach-session
     else
         exec tmux new-session -s work
@@ -83,6 +100,11 @@ zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]-_}={[:upper:][:lower:
 zstyle ':completion:*' special-dirs true
 zstyle ':completion:*' list-colors ''
 
+# Cache expensive completions (package lists, remote hosts) — `dot setup zsh`
+# creates this directory, which until now nothing ever wrote to.
+zstyle ':completion:*' use-cache on
+zstyle ':completion:*' cache-path "${ZDOTDIR}/cache"
+
 # ============================================================================
 # Colors
 # ============================================================================
@@ -110,7 +132,13 @@ WORDCHARS=${WORDCHARS//[\/]/}
 # Vi Mode
 # ============================================================================
 bindkey -v
-export KEYTIMEOUT=1
+# KEYTIMEOUT is in hundredths of a second: how long zle waits for the rest of a
+# multi-byte key sequence. At 1 (10ms) an arrow key whose bytes arrive split
+# across packets — routine on a cellular link — is read as a bare Escape
+# followed by junk, which is where mangled arrows and vi-mode surprises on
+# mobile come from. 20 is still imperceptible for the Escape-to-normal-mode
+# switch but survives a slow link.
+export KEYTIMEOUT=20
 
 # Emacs-style shortcuts in vi insert mode (viins)
 # These keys are unbound (self-insert) by default in vi mode, so no conflicts.
@@ -140,8 +168,15 @@ source "${ZDOTDIR}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 source "${ZDOTDIR}/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh"
 
 # Keybindings for history-substring-search (must be after sourcing)
+#
+# Both encodings are bound on purpose. ^[[A is what a terminal sends in normal
+# cursor mode; ^[OA is what it sends in APPLICATION cursor mode, which tmux and
+# many full-screen apps switch on. With only the first pair bound, the up arrow
+# silently falls back to plain history in exactly those contexts.
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
+bindkey '^[OA' history-substring-search-up
+bindkey '^[OB' history-substring-search-down
 bindkey -M vicmd 'k' history-substring-search-up
 bindkey -M vicmd 'j' history-substring-search-down
 
@@ -187,8 +222,11 @@ fi
 # Only alias if the tool exists (checked by check_if_installed)
 check_if_installed bat && alias cat=bat    # Syntax highlighting cat
 check_if_installed eza && alias ls=eza     # Modern ls with git integration
-check_if_installed fd && alias find=fd     # Fast, user-friendly find
 check_if_installed rg && alias grep=rg     # Fast recursive grep
+
+# NOT aliased: find=fd. fd's argument grammar is not find's — `find . -name
+# '*.c'` means something entirely different to fd, and the failure is silent
+# rather than loud. Call fd by its own name.
 
 # DNS cache flush (OS-specific)
 if [[ "${OSTYPE}" == "darwin"* ]]; then

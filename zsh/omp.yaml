@@ -61,6 +61,10 @@ blocks:
 
   - type: prompt
     alignment: right
+    # Six segments of context do not fit beside the path and git status on a
+    # phone-width pane — without this they collide mid-line. "hide" drops the
+    # whole right block when it no longer fits; the left block always wins.
+    overflow: hide
     segments:
       # Node.js version
       - type: node
