@@ -1,0 +1,39 @@
+# Transparent background with the native macOS 26 Liquid Glass effect.
+background-opacity = 0.75
+background-blur = macos-glass-clear
+# Keep explicitly colored UI cells opaque so content behind the glass does not
+# show through tmux pills, Zellij tabs, or other status-line components.
+background-opacity-cells = false
+minimum-contrast = 1.1
+
+# Make tmux Alt bindings work while preserving right Option for macOS input.
+macos-option-as-alt = left
+
+# Window appearance and interaction.
+macos-titlebar-style = hidden
+mouse-hide-while-typing = true
+window-padding-x = 8
+window-padding-y = 6
+window-padding-balance = true
+unfocused-split-opacity = 1
+
+# Prefer the safe, power-efficient rendering path.
+window-vsync = true
+
+# Match the heavier font rendering commonly used by macOS terminals.
+font-family = Maple Mono NF
+font-size = 18
+font-thicken = true
+font-thicken-strength = 70
+
+# Copy selections to the macOS system clipboard.
+copy-on-select = clipboard
+
+# Quake-style drop-down terminal.
+keybind = global:option+space=toggle_quick_terminal
+quick-terminal-position = top
+quick-terminal-size = 45%
+quick-terminal-screen = mouse
+quick-terminal-autohide = true
+quick-terminal-animation-duration = 0.1
+quick-terminal-space-behavior = move

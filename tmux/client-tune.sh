@@ -98,6 +98,10 @@ if [ "${rows}" = 2 ]; then
         set_opt "status-format[1]" "$(tmux show-options -gv 'status-format[0]')"
         set_opt "status-format[0]" ""
     else
+        # Setting one session-level array element shadows the entire inherited
+        # status-format array, so copy the global bar explicitly before adding
+        # the blank padding row.
+        set_opt "status-format[0]" "$(tmux show-options -gv 'status-format[0]')"
         set_opt "status-format[1]" ""
     fi
 fi
