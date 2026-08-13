@@ -14,7 +14,7 @@ import {
   writeToProfile,
 } from 'karabiner.ts'
 
-writeToProfile('kayg-primary', [
+writeToProfile('Default profile', [
   navigationLayer(),
   selectLayer(),
   numberLayer(),

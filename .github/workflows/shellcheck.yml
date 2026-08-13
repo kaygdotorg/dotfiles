@@ -29,7 +29,7 @@ jobs:
         # function is only discovered at runtime, as exit 127.
         run: |
           status=0
-          for app in dot tmux zsh atuin ssh karabiner; do
+          for app in dot tmux zsh atuin ssh ghostty karabiner; do
             for action in setup update; do
               if ! grep -q "^${action}_${app}()" scripts/dot; then
                 echo "missing function: ${action}_${app}()"

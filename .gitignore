@@ -18,5 +18,8 @@
 # Editor / tool state
 .claude/
 
+# Node dependencies
+node_modules/
+
 # Local notes (not part of the dotfiles)
 modern-cli-tools.md

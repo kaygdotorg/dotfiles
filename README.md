@@ -39,7 +39,8 @@ dot setup zsh
 dot setup tmux
 dot setup atuin
 dot setup ssh
-dot setup karabiner  # macOS only, requires npx
+dot setup ghostty
+dot setup karabiner  # macOS only, requires npm
 ```
 
 Each `dot setup <app>` command creates the necessary directories, symlinks configuration files from this repository into the correct system paths, and installs any dependencies (plugins, binaries, etc.). Running setup again is safe: existing symlinks are overwritten, existing zsh plugins are skipped, and existing Atuin installs are reused.
@@ -57,7 +58,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI accepts exactly two arguments:
 
 ```bash
-dot <setup|update> <dot|tmux|zsh|atuin|ssh|karabiner>
+dot <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -66,7 +67,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 
 - `dot setup zsh` reuses the existing install directory and skips plugin repos that are already present.
 - `dot setup atuin` reuses an existing `~/.atuin/bin/atuin` installation, ensures `~/.local/bin` exists, and then refreshes the symlink/config.
-- `dot setup dot`, `dot setup tmux`, and `dot setup ssh` are symlink-based and can be run repeatedly.
+- `dot setup dot`, `dot setup tmux`, `dot setup ssh`, and `dot setup ghostty` are symlink-based and can be run repeatedly.
 - `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten.
 - `dot setup karabiner` refuses to run anywhere but macOS.
 
@@ -76,6 +77,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - **Tmux** — Standalone configuration with Catppuccin Mocha theme, OSC 52 clipboard support for nested sessions, vi-mode copy bindings, mouse support, `F12`/`M-F` pass-through toggle for nested sessions, searchable keybindings cheatsheet (`prefix + ?`), per-client tuning on attach, and [TPM](https://github.com/tmux-plugins/tpm) for plugin management.
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
 - **SSH** — Managed SSH client configuration, tuned for mobile links (keepalives, connection multiplexing), with machine-local hosts kept out of the repository in `~/.ssh/config.local`.
+- **Ghostty** — 75% opaque terminal background with the native macOS 26 Liquid Glass blur effect.
 - **Karabiner** — Advanced keyboard customization via [karabiner.ts](https://github.com/evan-liu/karabiner.ts) with Colemak-DH layout and hyper key layers.
 
 ## Repository Structure
@@ -99,6 +101,8 @@ Configuration files are stored flat under each app's directory. The `dot` script
 │   └── client-tune.sh       # Per-client tuning, run on every attach
 ├── atuin/
 │   └── config.toml          # Atuin shell history configuration
+├── ghostty/
+│   └── config.ghostty       # Ghostty terminal configuration
 ├── .ssh/
 │   ├── config               # SSH client configuration
 │   └── config.local.example # Template for machine-local hosts (untracked)
@@ -122,6 +126,7 @@ graph LR
         E["atuin/config.toml"]
         F[".ssh/config"]
         F2[".ssh/config.local.example"]
+        I["ghostty/config.ghostty"]
         G["karabiner-ts/index.ts"]
         H["scripts/dot"]
     end
@@ -136,6 +141,7 @@ graph LR
         E1["~/.config/atuin/config.toml"]
         F1["~/.ssh/config"]
         F21["~/.ssh/config.local"]
+        I1["~/.config/ghostty/config.ghostty"]
         G1["~/.config/karabiner/karabiner.json"]
         H1["~/.local/bin/dot"]
     end
@@ -149,11 +155,12 @@ graph LR
     E -->|symlink| E1
     F -->|symlink| F1
     F2 -->|copy once| F21
+    I -->|symlink| I1
     G -->|generates| G1
     H -->|symlink| H1
 ```
 
-> **Note:** Karabiner is the exception — `index.ts` is executed via `npx karabiner.ts`, which writes the profile JSON directly to `~/.config/karabiner/karabiner.json`. It is not symlinked.
+> **Note:** Karabiner is the exception — its local npm dependencies are installed and `index.ts` is executed via `tsx`, which writes the profile JSON directly to `~/.config/karabiner/karabiner.json`. It is not symlinked.
 
 ## Quirks
 

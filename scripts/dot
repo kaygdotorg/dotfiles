@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|karabiner>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner>"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -375,6 +375,25 @@ update_ssh() {
     setup_ssh
 }
 
+# ghostty
+# Linking: ghostty/config.ghostty → ~/.config/ghostty/config.ghostty
+ghostty_src="${repo_path}/ghostty"
+ghostty_dest="${HOME}/.config/ghostty"
+
+setup_ghostty() {
+    printf '%s' "Creating ${ghostty_dest} directory"
+    run_cmd mkdir -p "${ghostty_dest}"
+
+    backup_if_real "${ghostty_dest}/config.ghostty"
+
+    printf '%s' "Linking Ghostty configuration"
+    run_cmd ln -sf "${ghostty_src}/config.ghostty" "${ghostty_dest}/config.ghostty"
+}
+
+update_ghostty() {
+    setup_ghostty
+}
+
 # karabiner (macOS only)
 # Generates: ~/.config/karabiner/karabiner.json (via writeToProfile)
 karabiner_src="${repo_path}/karabiner-ts"
@@ -387,10 +406,13 @@ setup_karabiner() {
         exit 1
     fi
 
-    check_if_installed_and_exit npx
+    check_if_installed_and_exit npm
+
+    printf '%s' "Installing Karabiner configuration dependencies"
+    run_cmd npm install --prefix "${karabiner_src}"
 
     printf '%s' "Generating Karabiner-Elements configuration"
-    run_cmd npx --yes karabiner.ts "${karabiner_src}/index.ts"
+    run_cmd npm run --prefix "${karabiner_src}" build
 }
 
 update_karabiner() {
@@ -415,7 +437,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|tmux|zsh|atuin|ssh|karabiner) ;;
+        dot|tmux|zsh|atuin|ssh|ghostty|karabiner) ;;
         *)
             usage
             exit 1
@@ -423,7 +445,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|atuin|karabiner) ;;
+        dot|atuin|ghostty|karabiner) ;;
         *) check_if_installed_and_exit "${app}" ;;
     esac
 
