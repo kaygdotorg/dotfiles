@@ -23,3 +23,7 @@ node_modules/
 
 # Local notes (not part of the dotfiles)
 modern-cli-tools.md
+
+# tmux debug logs
+tmux-client-*.log
+tmux-server-*.log

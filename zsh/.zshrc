@@ -5,12 +5,29 @@
 # Base PATH: user local binaries take precedence
 export PATH="${HOME}/.local/bin:${PATH}"
 
-# Homebrew - macOS (Apple Silicon) or Linux
-if [[ "${OSTYPE}" == "darwin"* && -d "/opt/homebrew/bin" ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-elif [[ -d "/home/linuxbrew/.linuxbrew/bin" ]]; then
-    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-fi
+# Package manager PATH - nix first, then brew (only where present)
+case "${OSTYPE}" in
+    darwin*)
+        # Nix (per-user) takes precedence, then Homebrew (Apple Silicon or Intel)
+        if [[ -d "${HOME}/.nix-profile/bin" ]]; then
+            export PATH="${HOME}/.nix-profile/bin:${PATH}"
+        fi
+        if [[ -d "/nix/var/nix/profiles/default/bin" ]]; then
+            export PATH="/nix/var/nix/profiles/default/bin:${PATH}"
+        fi
+        if [[ -d "/opt/homebrew/bin" ]]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        elif [[ -d "/usr/local/bin" ]]; then
+            eval "$(/usr/local/bin/brew shellenv)"
+        fi
+        ;;
+    *)
+        # Nix - system-wide packages (installed via nix, shared by all users)
+        if [[ -d "/nix/var/nix/profiles/default/bin" ]]; then
+            export PATH="/nix/var/nix/profiles/default/bin:${PATH}"
+        fi
+        ;;
+esac
 
 # Spicetify (Spotify CLI) - only if installed
 if [[ -d "${HOME}/.spicetify" ]]; then
