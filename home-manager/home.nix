@@ -35,6 +35,10 @@
     ffmpeg
     emacs
     cliclick
+
+    # ghostty terminfo (no UI needed on headless hosts; just the terminfo
+    # so xterm-ghostty TERM works over ssh from ghostty terminals)
+    pkgs.ghostty.terminfo
   ];
 
   # zsh as the shell, with the dotfiles config wired in
