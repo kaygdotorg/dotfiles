@@ -34,12 +34,17 @@
     # misc user tools present on mbp
     ffmpeg
     emacs
-    cliclick
 
     # ghostty terminfo (no UI needed on headless hosts; just the terminfo
     # so xterm-ghostty TERM works over ssh from ghostty terminals)
     pkgs.ghostty.terminfo
   ];
+
+  # OmniWM tiling window manager — macOS only (headless Linux hosts skip it).
+  programs.omniwm = {
+    enable = pkgs.stdenv.hostPlatform.isDarwin;
+    launchd.enable = pkgs.stdenv.hostPlatform.isDarwin;
+  };
 
   # zsh as the shell, with the dotfiles config wired in
   programs.zsh = {

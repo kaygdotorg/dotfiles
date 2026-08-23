@@ -13,7 +13,17 @@
     homeConfigurations = {
       kayg = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.aarch64-darwin;
-        modules = [ ./home.nix ];
+        modules = [
+          ./home.nix
+          {
+            nixpkgs.overlays = [
+              (final: prev: {
+                omniwm = final.callPackage ./omniwm/package.nix { };
+              })
+            ];
+          }
+          ./omniwm/module.nix
+        ];
       };
     };
   };
