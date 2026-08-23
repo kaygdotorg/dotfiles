@@ -1,44 +1,48 @@
-{ config, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 {
   home.username = "kayg";
   home.homeDirectory = "/Users/kayg";
 
-  # Packages referenced by the dotfiles zshrc + the real user tools on mbp.
-  home.packages = with pkgs; [
-    # shell / prompt / history
-    oh-my-posh
-    zoxide
-    atuin
-    zellij
-    tmux
+  # Packages for BOTH macOS and Linux hosts.
+  home.packages = with pkgs;
+    [
+      # shell / prompt / history
+      oh-my-posh
+      zoxide
+      atuin
+      zellij
+      tmux
 
-    # file / text tools
-    bat
-    eza
-    fd
-    ripgrep
-    fzf
-    jq
-    yq
-    delta
+      # file / text tools
+      bat
+      eza
+      fd
+      ripgrep
+      fzf
+      jq
+      yq
+      delta
 
-    # dev tooling
-    git
-    gh
-    nodejs_22
-    bun
-    python3
-    pipx
+      # dev tooling
+      git
+      gh
+      nodejs_22
+      bun
+      python3
+      pipx
 
-    # misc user tools present on mbp
-    ffmpeg
-    emacs
+      # media / misc
+      ffmpeg
 
-    # ghostty terminfo (no UI needed on headless hosts; just the terminfo
-    # so xterm-ghostty TERM works over ssh from ghostty terminals)
-    pkgs.ghostty.terminfo
-  ];
+      # ghostty terminfo (no UI needed on headless hosts; just the terminfo
+      # so xterm-ghostty TERM works over ssh from ghostty terminals)
+      pkgs.ghostty.terminfo
+    ]
+    # macOS-only packages.
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
+      emacs
+    ];
 
   # OmniWM tiling window manager — macOS only (headless Linux hosts skip it).
   programs.omniwm = {
