@@ -48,36 +48,43 @@ if command -v go 2>/dev/null 1>&2; then
 fi
 
 # ============================================================================
-# SAFETY: Nested tmux check
+# SAFETY: nested multiplexer check + auto-start (zellij primary, tmux fallback)
 # ============================================================================
-# Why: If you accidentally run `tmux` inside an existing tmux session,
-# you get nested sessions which are confusing and hard to exit.
-# This prevents auto-starting tmux if we're already inside one.
+# Why: running a multiplexer inside an existing one produces confusing nested
+# sessions that are hard to exit. This prevents auto-starting either tool when
+# already inside one.
 #
 # The guards, in order:
 #   $- == *i*             interactive only (not scp/rsync/sftp transfers)
-#   -z ${TMUX}            not already inside tmux
-#   -z ${DOT_NO_AUTOTMUX} manual escape hatch: `DOT_NO_AUTOTMUX=1 ssh host`
+#   -z ${TMUX}/${ZELLIJ}  not already inside tmux or zellij
+#   -z ${DOT_NO_AUTOMUX}  manual escape hatch: `DOT_NO_AUTOMUX=1 ssh host`
 #   -z ${SSH_ORIGINAL_COMMAND}
 #                         a forced command (VS Code Remote, `ssh host cmd`,
 #                         editor and agent remotes) must not be hijacked into
-#                         a tmux session — it will hang or garble its protocol
+#                         a session — it will hang or garble its protocol
 #
-# TMUX_CLIENT_NAME: set it per device (e.g. in the terminal app's per-connection
-# environment) to get a GROUPED session — same windows as "work", but its own
-# current window and its own size. Without it the behaviour is unchanged:
-# attach to the most recent session.
+# PRIMARY: zellij (trial since 2026-08). Attaching semantics differ from tmux:
+#   zellij attach --c reuses or creates; the "work" session name keeps parity
+#   with the old tmux layout. ZELLIJ_CLIENT_NAME is the zellij analogue of
+#   TMUX_CLIENT_NAME, but zellij has no grouped sessions — each name is its
+#   own session, so the per-device grouping is lost there (tmux fallback via
+#   DOT_NO_AUTOMUX=1 zellij-less shells still supports it).
+#
+# FALLBACK: tmux keeps its original behaviour when zellij is absent.
 # ============================================================================
-if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] \
-    && [[ -z "${DOT_NO_AUTOTMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]] \
-    && [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
-    if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
-        && tmux has-session -t work 2>/dev/null; then
-        exec tmux new-session -A -s "${TMUX_CLIENT_NAME}" -t work
-    elif tmux has-session 2>/dev/null; then
-        exec tmux attach-session
-    else
-        exec tmux new-session -s work
+if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
+    && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
+    if [[ -n "$(command -v zellij)" ]] && [[ -d "${HOME}/.config/zellij" ]]; then
+        exec zellij attach --create work
+    elif [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
+        if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
+            && tmux has-session -t work 2>/dev/null; then
+            exec tmux new-session -A -s "${TMUX_CLIENT_NAME}" -t work
+        elif tmux has-session 2>/dev/null; then
+            exec tmux attach-session
+        else
+            exec tmux new-session -s work
+        fi
     fi
 fi
 

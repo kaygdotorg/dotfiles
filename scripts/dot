@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner|nix>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zellij|zsh|atuin|ssh|ghostty|karabiner|nix>"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -151,6 +151,24 @@ setup_tmux() {
 
 update_tmux() {
     printf '%s\n' "No framework to update. Use prefix + U to update plugins."
+}
+
+# zellij (trial companion to tmux — config only, no plugin manager needed)
+# Linking: zellij/config.kdl → ~/.config/zellij/config.kdl
+zellij_src="${repo_path}/zellij"
+
+setup_zellij() {
+    printf '%s' "Creating zellij configuration directory"
+    run_cmd mkdir -p "${HOME}/.config/zellij"
+
+    backup_if_real "${HOME}/.config/zellij/config.kdl"
+
+    printf '%s' "Linking zellij configuration"
+    run_cmd ln -sf "${zellij_src}/config.kdl" "${HOME}/.config/zellij/config.kdl"
+}
+
+update_zellij() {
+    printf '%s\n' "No framework to update. Zellij has no plugin manager in use."
 }
 
 # zsh
@@ -454,7 +472,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|tmux|zsh|atuin|ssh|ghostty|karabiner|nix) ;;
+        dot|tmux|zellij|zsh|atuin|ssh|ghostty|karabiner|nix) ;;
         *)
             usage
             exit 1
