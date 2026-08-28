@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily nixpkgs-unstable pin refresh + user profile upgrade
+
+[Timer]
+# 09:17 IST (03:47 UTC) daily — off-peak for the VM, after the homelab's
+# morning update window, before the workday starts.
+OnCalendar=*-*-* 03:47:00 UTC
+# If the machine was off/asleep at the scheduled time, run on next boot.
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# nix-unstable-update — re-pin the user nixpkgs registry to the current
+# nixpkgs-unstable HEAD and upgrade the user nix profile against it.
+#
+# Why: packages installed via `nix profile install nixpkgs#<pkg>` resolve
+# through the *user registry pin* of flake:nixpkgs. That pin is frozen at
+# whatever revision it was first resolved on (learned the hard way with
+# zellij 0.45.0: pinned Aug 19, released Aug 20). This keeps the pin rolling
+# so unstable actually means unstable.
+#
+# Rollback: `nix profile history` then `nix profile rollback <generation>`.
+# The registry pin itself is ~/.local/state/nix/registry.json (trivially
+# re-pinnable).
+
+set -euo pipefail
+
+NIX_BIN="$(command -v nix || echo /nix/var/nix/profiles/default/bin/nix)"
+
+echo "== pinning flake:nixpkgs to nixpkgs-unstable HEAD =="
+"$NIX_BIN" registry pin nixpkgs github:NixOS/nixpkgs/nixpkgs-unstable
+
+echo "== upgrading user nix profile =="
+"$NIX_BIN" profile upgrade --all
+
+echo "== installed versions =="
+"$NIX_BIN" profile list --json 2>/dev/null \
+    | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for entry in data.get("elements", {}).values():
+    print(" ", entry.get("attrPath") or entry.get("pname", "?"), "->", entry.get("version", "?"))
+' || true
+
+echo "== done =="

@@ -1,0 +1,14 @@
+[Unit]
+Description=Nix user profile update against nixpkgs-unstable HEAD
+# Re-pin flake:nixpkgs to unstable HEAD and upgrade the user profile so
+# `nix profile install nixpkgs#pkg` tracks a rolling unstable, not a frozen
+# snapshot (the zellij 0.45.0 lesson).
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/nix-unstable-update
+# nix downloads can be slow; give it room
+TimeoutStartSec=30min
+# keep logs
+StandardOutput=journal
+StandardError=journal

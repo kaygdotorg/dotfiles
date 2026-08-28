@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner|nix>"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -419,6 +419,23 @@ update_karabiner() {
     setup_karabiner
 }
 
+# nix — macOS + Linux. The wizard lives in scripts/lib/nix.sh (it grew past
+# what belongs inline here): detects the OS, installs Determinate Nix if
+# missing (interactive), pins flake:nixpkgs to nixpkgs-unstable HEAD, then wires
+# the platform piece (Linux: systemd user timer for daily unstable refresh;
+# macOS: home-manager flake check + optional switch).
+
+# shellcheck source=lib/nix.sh
+. "${script_path}/lib/nix.sh"
+
+setup_nix() {
+    dot_nix_main
+}
+
+update_nix() {
+    setup_nix
+}
+
 main() {
     if [ "${#}" -ne 2 ]; then
         usage
@@ -437,7 +454,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|tmux|zsh|atuin|ssh|ghostty|karabiner) ;;
+        dot|tmux|zsh|atuin|ssh|ghostty|karabiner|nix) ;;
         *)
             usage
             exit 1
