@@ -56,15 +56,11 @@
     launchd.enable = pkgs.stdenv.hostPlatform.isDarwin;
   };
 
-  # zsh as the shell, with the dotfiles config wired in
-  programs.zsh = {
-    enable = true;
-    enableCompletion = true;
-    autosuggestion.enable = true;
-    syntaxHighlighting.enable = true;
-    # ZDOTDIR is set by the dotfiles .zshenv; home-manager should not clobber it
-    dotDir = "${config.home.homeDirectory}/.config/zsh";
-  };
+  # zsh is NOT managed here. The dotfiles repo owns ~/.zshenv and
+  # ~/.config/zsh/.zshrc via symlinks (scripts/dot setup zsh), including its
+  # own plugin sources. Letting home-manager's programs.zsh write into the
+  # same paths collides at activation ("would be clobbered") and would fork
+  # the config. Packages that zsh needs are in home.packages above.
 
   # git identity + sensible defaults
   programs.git = {
