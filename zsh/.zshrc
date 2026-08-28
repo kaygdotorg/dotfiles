@@ -74,7 +74,7 @@ fi
 # ============================================================================
 if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
     && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    if [[ -n "$(command -v zellij)" ]] && [[ -d "${HOME}/.config/zellij" ]]; then
+    if [[ -n "$(command -v zellij)" ]]; then
         exec zellij attach --create work
     elif [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
         if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
