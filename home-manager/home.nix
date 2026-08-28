@@ -35,10 +35,16 @@
       # media / misc
       ffmpeg
 
-      # ghostty terminfo (no UI needed on headless hosts; just the terminfo
-      # so xterm-ghostty TERM works over ssh from ghostty terminals)
-      pkgs.ghostty.terminfo
+      # ghostty terminfo (no UI needed here; just the terminfo so
+      # xterm-ghostty TERM works over ssh from ghostty terminals). The attr
+      # source differs by platform: linux builds ghostty from source
+      # (pkgs.ghostty), darwin uses the official dmg wrapper
+      # (pkgs.ghostty-bin) — pkgs.ghostty refuses to evaluate on darwin
+      # (meta.platforms = linux only).
     ]
+    ++ [ (if pkgs.stdenv.hostPlatform.isDarwin
+          then pkgs.ghostty-bin.terminfo
+          else pkgs.ghostty.terminfo) ]
     # macOS-only packages.
     ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       emacs

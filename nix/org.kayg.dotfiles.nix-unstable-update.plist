@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  nix-unstable-update (macOS launchd equivalent of the Linux systemd timer)
+  Re-pins flake:nixpkgs to nixpkgs-unstable HEAD, refreshes the home-manager
+  flake lock, and switches. Installed by `dot setup nix` into
+  ~/Library/LaunchAgents.
+
+  Logs: /tmp/nix-unstable-update.out / .err
+-->
+<dict>
+    <key>Label</key>
+    <string>org.kayg.dotfiles.nix-unstable-update</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>
+            export PATH="/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nix-profile/bin"
+            set -e
+            # 1. re-pin flake:nixpkgs to unstable HEAD (registry is user-level)
+            nix registry pin nixpkgs github:NixOS/nixpkgs/nixpkgs-unstable
+            # 2. refresh the home-manager flake lock and switch, so the
+            #    package set tracks the new pin
+            cd "$HOME/.config/dotfiles/home-manager"
+            nix flake update
+            nix run home-manager/master -- switch --flake .
+            # 3. GC old generations so unstable churn does not fill the disk
+            nix run home-manager/master -- expire-generations "-7 days" || true
+            nix-collect-garbage --delete-older-than 14d || true
+        </string>
+    </array>
+
+    <!-- daily at 09:17 local (mirrors the Linux timer's 03:47 UTC).
+         launchd coalesces missed calendar fires into one run on wake, so a
+         sleeping Mac still gets its daily update. No RunAtLoad: a full nix
+         update on every login would be rude. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>17</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/nix-unstable-update.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/nix-unstable-update.err</string>
+</dict>
+</plist>

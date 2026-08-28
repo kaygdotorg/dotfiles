@@ -196,11 +196,16 @@ wizard_linux_timer() {
 }
 
 # ----------------------------------------------------------------------------
-# step 3b: macOS — home-manager flake wiring
+# step 3b: macOS — home-manager flake + launchd auto-update
 # ----------------------------------------------------------------------------
 
 wizard_macos_flake() {
     local flake_dir="${repo_path}/home-manager"
+    local nix_src="${repo_path}/nix"
+    local agents_dir="${HOME}/Library/LaunchAgents"
+    local plist_id="org.kayg.dotfiles.nix-unstable-update"
+    local plist_src="${nix_src}/${plist_id}.plist"
+    local plist_dst="${agents_dir}/${plist_id}.plist"
 
     printf '%s\n' ""
     printf '%s\n' "macOS: packages are managed by the home-manager flake, not by"
@@ -212,8 +217,18 @@ wizard_macos_flake() {
         printf '%s\n' "flake OK"
     fi
 
+    # launchd daily update (the macOS equivalent of the Linux systemd timer):
+    # re-pin unstable, flake update, home-manager switch, GC old generations.
+    printf '%s' "Installing the daily auto-update LaunchAgent"
+    run_cmd mkdir -p "${agents_dir}"
+    backup_if_real "${plist_dst}"
+    run_cmd ln -sf "${plist_src}" "${plist_dst}"
+    run_cmd launchctl bootout "gui/$(id -u)/${plist_id}" 2>/dev/null || true
+    run_cmd launchctl bootstrap "gui/$(id -u)" "${plist_dst}"
+    run_cmd launchctl enable "gui/$(id -u)/${plist_id}"
+
     printf '%s\n' ""
-    printf '%s\n' "To apply the package set on this Mac:"
+    printf '%s\n' "To apply the package set on this Mac (the agent does this daily):"
     printf '%s\n' "  nix run home-manager/master -- switch --flake ${flake_dir}"
     printf '%s\n' ""
     printf '%s\n' "Rollback if a switch misbehaves:"
@@ -297,11 +312,16 @@ dot_nix_main() {
     fi
     printf '%s\n' ""
 
-    # -- pin unstable ------------------------------------------------------------
+    # -- resilience: every step below is idempotent. re-running the wizard on
+    #    an already-set-up machine is safe: install is skipped (nix found),
+    #    re-pinning refreshes to current HEAD, re-linking and re-enabling the
+    #    timer/agent are no-ops-or-fixes. `dot setup nix` = converge to desired.
+
+    # -- pin unstable (always: HEAD moves daily, this is cheap) -----------------
     wizard_pin_unstable
     printf '%s\n' ""
 
-    # -- platform wiring -----------------------------------------------------------
+    # -- platform wiring (idempotent: re-linking + re-enable is harmless) -------
     if [ "${wizard_os}" = "Linux" ]; then
         wizard_linux_timer
     else
