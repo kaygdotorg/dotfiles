@@ -2,7 +2,11 @@
   description = "kayg home-manager configuration";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/07e1d92cdc0ed416cfa11ff3ca40d17e61cfba7a";
+    # track the unstable BRANCH (not a frozen rev): nix flake update moves
+    # this daily via the auto-update LaunchAgent. flake.lock pins whatever
+    # HEAD was at last update — the lock is the reproducibility, the branch
+    # is the freshness.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
