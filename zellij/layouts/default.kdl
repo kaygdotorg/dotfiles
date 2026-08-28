@@ -1,0 +1,12 @@
+// default layout — single zjstatus bar on top, no stock tab-bar.
+// The bar renders path / tab pills / session+mode via zjstatus.kdl config.
+// Paths are ~-expanded by zellij; both live under ~/.config/zellij/ (linked
+// into the dotfiles repo by `dot setup zellij`).
+layout {
+    pane size=1 borderless=true {
+        plugin location="file:~/.config/zellij/plugins/zjstatus.wasm" {
+            config_file "~/.config/zellij/zjstatus.kdl"
+        }
+    }
+    pane
+}

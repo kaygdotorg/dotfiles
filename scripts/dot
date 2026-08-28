@@ -154,21 +154,42 @@ update_tmux() {
 }
 
 # zellij (trial companion to tmux — config only, no plugin manager needed)
-# Linking: zellij/config.kdl → ~/.config/zellij/config.kdl
+# Linking: zellij/config.kdl         → ~/.config/zellij/config.kdl
+#          zellij/zjstatus.kdl       → ~/.config/zellij/zjstatus.kdl
+#          zellij/layouts/default.kdl→ ~/.config/zellij/layouts/default.kdl
+#          zellij/zjstatus.wasm      → ~/.config/zellij/plugins/zjstatus.wasm
 zellij_src="${repo_path}/zellij"
 
 setup_zellij() {
     printf '%s' "Creating zellij configuration directory"
-    run_cmd mkdir -p "${HOME}/.config/zellij"
+    run_cmd mkdir -p "${HOME}/.config/zellij/layouts" "${HOME}/.config/zellij/plugins"
 
     backup_if_real "${HOME}/.config/zellij/config.kdl"
 
     printf '%s' "Linking zellij configuration"
     run_cmd ln -sf "${zellij_src}/config.kdl" "${HOME}/.config/zellij/config.kdl"
+
+    printf '%s' "Linking zjstatus bar config"
+    run_cmd ln -sf "${zellij_src}/zjstatus.kdl" "${HOME}/.config/zellij/zjstatus.kdl"
+
+    printf '%s' "Linking zellij default layout"
+    run_cmd ln -sf "${zellij_src}/layouts/default.kdl" "${HOME}/.config/zellij/layouts/default.kdl"
+
+    if [ ! -f "${HOME}/.config/zellij/plugins/zjstatus.wasm" ]; then
+        printf '%s' "Installing zjstatus plugin (wasm)"
+        run_cmd ln -sf "${zellij_src}/zjstatus.wasm" "${HOME}/.config/zellij/plugins/zjstatus.wasm"
+    fi
 }
 
 update_zellij() {
-    printf '%s\n' "No framework to update. Zellij has no plugin manager in use."
+    # refresh the vendored zjstatus binary to the latest release
+    local url
+    url="$(curl -sL "https://api.github.com/repos/dj95/zjstatus/releases/latest" \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); print(next(a['browser_download_url'] for a in d['assets'] if a['name']=='zjstatus.wasm'))")"
+    printf '%s' "Downloading latest zjstatus"
+    run_cmd curl -sL -o "${zellij_src}/zjstatus.wasm" "${url}"
+    run_cmd ln -sf "${zellij_src}/zjstatus.wasm" "${HOME}/.config/zellij/plugins/zjstatus.wasm"
+    printf '%s\n' "Note: clear ~/.cache/zellij if the bar misbehaves after a plugin update."
 }
 
 # zsh

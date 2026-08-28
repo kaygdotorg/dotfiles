@@ -1,0 +1,58 @@
+// zjstatus bar config — Catppuccin Mocha pill theme (mirrors the tmux setup)
+// Included via `plugin ... { config }` blocks in layouts that load zjstatus.
+//
+// Design:
+//   left:   current path pill (~-rewritten), matching tmux status-left
+//   center: tab pills — rounded caps, mauve active / surface1 inactive
+//   right:  session pill + mode pill (PASS-red when locked, blue normal)
+//
+// Glyphs: powerline-extra U+E0B6 () / U+E0B4 () pill caps, same as tmux.
+
+format left "$icon_path{format_path} "
+format center "$tab{format_tab}"
+format right " {format_session} {format_mode}"
+
+// ---------------------------------------------------------------- left ----
+
+format_path "#[bg=#313244,fg=#cdd6f4] {pwd} "
+icon_path ""
+
+// ---------------------------------------------------------------- tabs ----
+
+// tabs block: rounded caps around each pill, separator between them
+tab_normal_format      "#[bg=#585b70,fg=#9399b2] {index} {name} "
+tab_active_format      "#[bg=#cba6f7,fg=#1e1e2e,bold] {index} {name} "
+tab_normal_prefix      "#[bg=#585b70,fg=#585b70]"
+tab_normal_suffix      "#[bg=#585b70,fg=#585b70]"
+tab_active_prefix      "#[bg=#cba6f7,fg=#cba6f7]"
+tab_active_suffix      "#[bg=#cba6f7,fg=#cba6f7]"
+tab_separator          " "
+tab_name_max_width     24
+
+// ---------------------------------------------------------------- right ---
+
+// session pill (mauve, like the tmux ◆ #S pill)
+format_session "#[bg=#cba6f7,fg=#1e1e2e,bold] ◆ {session_name} "
+
+// mode pill: shows the current zellij mode (_tmux = our C-t command layer_).
+// red for pane/tab/resize/search sub-modes so you always see why keys changed.
+format_mode "#[bg=#89b4fa,fg=#1e1e2e,bold] {mode} "
+mode_normal "#[bg=#45475a,fg=#cdd6f4] normal "
+mode_locked "#[bg=#f38ba8,fg=#1e1e2e,bold] locked "
+mode_pane   "#[bg=#f9e2af,fg=#1e1e2e,bold] pane "
+mode_tab    "#[bg=#f9e2af,fg=#1e1e2e,bold] tab "
+mode_resize "#[bg=#f9e2af,fg=#1e1e2e,bold] resize "
+mode_search "#[bg=#f9e2af,fg=#1e1e2e,bold] search "
+mode_scroll "#[bg=#f9e2af,fg=#1e1e2e,bold] scroll "
+mode_session "#[bg=#f9e2af,fg=#1e1e2e,bold] session "
+mode_move   "#[bg=#f9e2af,fg=#1e1e2e,bold] move "
+mode_prompt "#[bg=#f9e2af,fg=#1e1e2e,bold] prompt "
+mode_tmux   "#[bg=#b4befe,fg=#1e1e2e,bold] tmux "
+
+// ---------------------------------------------------------- behaviour -----
+
+// hide the stock hint text entirely
+hide_normal_hints true
+
+// render interval (ms) — clock/permission polling
+render_interval 1000
