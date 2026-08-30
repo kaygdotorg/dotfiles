@@ -1,0 +1,163 @@
+// Zellij configuration — Catppuccin Mocha, mirrors the dotfiles tmux setup.
+//
+// Trial companion to tmux (kept installed and untouched). Same design goals:
+//   - C-t prefix family preserved where zellij's modal model allows it
+//   - vim-style h/j/k/l navigation everywhere
+//   - mouse on, truecolor, Catppuccin Mocha pill-ish look
+//   - clipboard handled via OSC 52 (zellij does this natively with
+//     copy_command "osc52"; no copy-pipe workaround needed)
+//   - new panes/tabs inherit the current pane's working directory
+//
+// Layout of this file: session → ui → mouse/scroll → clipboard → keybinds.
+
+// ---------------------------------------------------------------------------
+// session behaviour
+// ---------------------------------------------------------------------------
+
+session {
+    // Mirror tmux `detach-on-destroy off`: closing the last tab of a session
+    // should not kick the client out; zellij returns to the session manager.
+    // (zellij's equivalent of switching to the next session.)
+    // The default (false) already detaches instead of exiting the client,
+    // which is the behaviour the tmux option wanted.
+
+    // Auto-start a named "work"-style session on first run. The zshrc keeps
+    // its tmux autostart; `z` / `zellij` from a shell lands in the manager
+    // where recent sessions are one keystroke away.
+    // name is supplied by `zellij attach --create work` in the zshrc alias.
+}
+
+// Serialize (suspend) the terminal's own keyboard shortcuts conflict-free:
+// zellij handles Ctrl-c etc. internally while running.
+serialize-pane true
+
+// ---------------------------------------------------------------------------
+// ui
+// ---------------------------------------------------------------------------
+
+theme "catppuccin-mocha"
+
+ui {
+    pane_frames {
+        rounded_corners true
+        hide_session_name true
+    }
+    pane_frames {
+        // fat, quiet borders: colour only the active pane distinctly
+        // (zellij draws borders from the theme; catppuccin-mocha below uses
+        // surface0 for inactive and mauve for active via pane frame colours)
+    }
+}
+
+// Show a compact top bar (mirrors tmux status-position top).
+default_layout "compact"
+
+// Mirror tmux history-limit 50000 (zellij default is 10000 lines per pane).
+scroll_buffer_size 50000
+
+// ---------------------------------------------------------------------------
+// mouse + scrolling (tmux `set -g mouse on`)
+// ---------------------------------------------------------------------------
+
+mouse_mode true
+scroll_speed 3
+copy_on_select true
+
+// ---------------------------------------------------------------------------
+// clipboard (tmux's OSC 52 chain, simplified)
+// ---------------------------------------------------------------------------
+// Zellij's copy_command receives the copied text on stdout. Writing an OSC 52
+// sequence to /dev/tty re-emits it to the outer terminal exactly like the tmux
+// copy-pipe workaround, so nested SSH (inner zellij → outer terminal → macOS
+// clipboard) keeps working without terminfo Ms support on either side.
+
+copy_command "sh -c 'base64 | tr -d \"\\n\" | (printf \"\\033]52;c;%s\\a\" \"$(cat)\" > /dev/tty; cat > /dev/null)'"
+
+// ---------------------------------------------------------------------------
+// themes
+// ---------------------------------------------------------------------------
+
+themes {
+    catppuccin-mocha {
+        bg "#585b70"      // surface1 — panel/toolbar backdrop
+        fg "#cdd6f4"      // text
+        red "#f38ba8"
+        green "#a6e3a1"
+        yellow "#f9e2af"
+        blue "#89b4fa"
+        magenta "#cba6f7" // mauve — active pill accent
+        orange "#fab387"  // peach
+        cyan "#94e2d5"    // sky
+        black "#1e1e2e"   // base — pill interior
+        white "#a6adc8"   // subtext0
+
+        // status bar pills, mirroring tmux: mauve active tab, surface1 tabs
+        green "#a6e3a1"
+        dark_green "#a6e3a1"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// keybinds — clear-defaults, then rebuild in the tmux dialect
+// ---------------------------------------------------------------------------
+// Design: keep zellij's modal system but re-key the *entry* points to match
+// muscle memory from the tmux config:
+//   C-t then...  pane/tab/scroll/resize sub-modes (zellij's model, tmux-ish keys)
+//   C-t h/j/k/l  direct pane focus (no sub-mode needed)
+//   C-t c        new tab, C-t x close, C-t , rename — as in tmux
+//
+// Deliberately NOT clearing defaults: zellij's Alt-based default bindings
+// (Alt+n/r/h/l...) keep working without a prefix and are genuinely useful on
+// desktop. The tmux-style C-t layer is additive. If they clash with apps,
+// `keybinds clear-defaults=true` is the one-line switch.
+
+keybinds {
+    // ── C-t: the tmux prefix, repurposed as zellij's "command" entry ──
+    normal {
+        bind "Ctrl t" { SwitchToMode "Tmux"; }
+        // direct actions that deserve zero sub-modes (tmux equivalents inline)
+        bind "Ctrl t" { Write 20; SwitchToMode "Tmux"; } // placeholder, overridden below
+    }
+
+    tmux {
+        // pane navigation — vim style, no extra keystrokes
+        bind "h" { MoveFocus "Left"; SwitchToMode "Normal"; }
+        bind "j" { MoveFocus "Down"; SwitchToMode "Normal"; }
+        bind "k" { MoveFocus "Up"; SwitchToMode "Normal"; }
+        bind "l" { MoveFocus "Right"; SwitchToMode "Normal"; }
+
+        // splits with current path (zellij always inherits cwd)
+        bind "-" { NewPane "Down" { name " "; }; SwitchToMode "Normal"; }
+        bind "_" { NewPane "Right" { name " "; }; SwitchToMode "Normal"; }
+
+        // tabs: create / close / rename / next / previous
+        bind "c" { NewTab; SwitchToMode "Normal"; }
+        bind "x" { CloseTab; SwitchToMode "Normal"; }
+        bind "," { SwitchToMode "RenameTab"; TabNameInput 0; }
+        bind "n" { GoToNextTab; SwitchToMode "Normal"; }
+        bind "p" { GoToPreviousTab; SwitchToMode "Normal"; }
+        bind "Tab" { ToggleTab; SwitchToMode "Normal"; }
+
+        // resize sub-mode (H/J/K/L like tmux's -r repeat bindings)
+        bind "H" { SwitchToMode "Resize"; }
+        bind "J" { SwitchToMode "Resize"; }
+        bind "K" { SwitchToMode "Resize"; }
+        bind "L" { SwitchToMode "Resize"; }
+
+        // floating + fullscreen
+        bind "f" { ToggleFloatingPanes; SwitchToMode "Normal"; }
+        bind "z" { ToggleFocusFullscreen; SwitchToMode "Normal"; }
+
+        // session actions (detach, session manager)
+        bind "d" { Detach; }
+        bind "s" { LaunchOrFocusPlugin "session-manager"; SwitchToMode "Normal"; }
+
+        // search scrollback (zellij's built-in, opens in Search mode)
+        bind "/" { SwitchToMode "Search"; }
+
+        // back to normal
+        bind "Esc" { SwitchToMode "Normal"; }
+        bind "Enter" { SwitchToMode "Normal"; }
+        bind "Ctrl t" { SwitchToMode "Normal"; }
+    }
+}
