@@ -54,6 +54,7 @@
   programs.omniwm = {
     enable = pkgs.stdenv.hostPlatform.isDarwin;
     launchd.enable = pkgs.stdenv.hostPlatform.isDarwin;
+    launchd.keepAlive = false;
   };
 
   # zsh is NOT managed here. The dotfiles repo owns ~/.zshenv and
