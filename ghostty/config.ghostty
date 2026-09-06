@@ -2,7 +2,7 @@
 background-opacity = 0.75
 background-blur = macos-glass-clear
 # Keep explicitly colored UI cells opaque so content behind the glass does not
-# show through tmux pills, Zellij tabs, or other status-line components.
+# show through tmux pills or other status-line components.
 background-opacity-cells = false
 minimum-contrast = 1.1
 

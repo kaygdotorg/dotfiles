@@ -11,7 +11,6 @@
       oh-my-posh
       zoxide
       atuin
-      zellij
       tmux
 
       # file / text tools

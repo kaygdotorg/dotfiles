@@ -5,8 +5,8 @@
 #
 # Why: packages installed via `nix profile install nixpkgs#<pkg>` resolve
 # through the *user registry pin* of flake:nixpkgs. That pin is frozen at
-# whatever revision it was first resolved on (learned the hard way with
-# zellij 0.45.0: pinned Aug 19, released Aug 20). This keeps the pin rolling
+# whatever revision it was first resolved on (a stale-pin lesson: a package
+# pinned Aug 19 missed its Aug 20 upstream release). This keeps the pin rolling
 # so unstable actually means unstable.
 #
 # Rollback: `nix profile history` then `nix profile rollback <generation>`.

@@ -2,7 +2,7 @@
 Description=Nix user profile update against nixpkgs-unstable HEAD
 # Re-pin flake:nixpkgs to unstable HEAD and upgrade the user profile so
 # `nix profile install nixpkgs#pkg` tracks a rolling unstable, not a frozen
-# snapshot (the zellij 0.45.0 lesson).
+# snapshot (a stale-pin lesson from earlier).
 
 [Service]
 Type=oneshot
