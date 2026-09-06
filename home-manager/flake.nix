@@ -26,7 +26,10 @@
               })
             ];
           }
-          ./omniwm/module.nix
+          # omniwm module: vendored module removed — home-manager master now
+          # ships upstream modules/programs/omniwm.nix with the same option
+          # shape (enable/package/launchd.keepAlive), so importing ours
+          # collides with a duplicate-option assertion.
         ];
       };
     };
