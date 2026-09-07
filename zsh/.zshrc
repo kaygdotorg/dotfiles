@@ -69,10 +69,18 @@ fi
 # FALLBACK: tmux when zellij is absent. TMUX_CLIENT_NAME attaches a named
 #   client session to the shared "work" session via tmux grouping.
 # ============================================================================
-if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
+if [[ $- == *i* ]] && [[ -t 0 ]] && [[ -t 1 ]] \
+    && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
     && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
     if [[ -n "$(command -v zellij)" ]]; then
-        exec zellij attach --create work
+        # has-session first: `attach --create` on a freshly-created-then-exited
+        # session (client disconnect before panes spawn — seen over tsshd)
+        # leaves an EXITED session that resurrects empty.
+        if ! zellij list-sessions 2>/dev/null | grep -q "^work "; then
+            exec zellij --session work
+        else
+            exec zellij attach work
+        fi
     elif [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
         if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
             && tmux has-session -t work 2>/dev/null; then
