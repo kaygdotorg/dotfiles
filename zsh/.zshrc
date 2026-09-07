@@ -48,29 +48,32 @@ if command -v go 2>/dev/null 1>&2; then
 fi
 
 # ============================================================================
-# SAFETY: nested multiplexer check + auto-start (tmux)
+# SAFETY: nested multiplexer check + auto-start (zellij primary, tmux fallback)
 # ============================================================================
 # Why: running a multiplexer inside an existing one produces confusing nested
-# sessions that are hard to exit. This prevents auto-starting tmux when already
-# inside one.
+# sessions that are hard to exit. This prevents auto-starting either tool when
+# already inside one.
 #
 # The guards, in order:
 #   $- == *i*             interactive only (not scp/rsync/sftp transfers)
-#   -z ${TMUX}            not already inside tmux
+#   -z ${TMUX}/${ZELLIJ}  not already inside tmux or zellij
 #   -z ${DOT_NO_AUTOMUX}  manual escape hatch: `DOT_NO_AUTOMUX=1 ssh host`
 #   -z ${SSH_ORIGINAL_COMMAND}
 #                         a forced command (VS Code Remote, `ssh host cmd`,
 #                         editor and agent remotes) must not be hijacked into
 #                         a session — it will hang or garble its protocol
 #
-# Grouped-session parity: TMUX_CLIENT_NAME (set per device) attaches a named
-# client session to the shared "work" session's windows via tmux grouping
-# (new-session -t work), so per-device sessions keep their own view/state
-# while sharing the panes.
+# PRIMARY: zellij (vanilla built-in defaults since 2026-09-07). attach --create
+#   reuses or creates; the "work" session name keeps parity with the tmux era.
+#
+# FALLBACK: tmux when zellij is absent. TMUX_CLIENT_NAME attaches a named
+#   client session to the shared "work" session via tmux grouping.
 # ============================================================================
-if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] \
+if [[ $- == *i* ]] && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
     && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    if [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
+    if [[ -n "$(command -v zellij)" ]]; then
+        exec zellij attach --create work
+    elif [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
         if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
             && tmux has-session -t work 2>/dev/null; then
             exec tmux new-session -A -s "${TMUX_CLIENT_NAME}" -t work
