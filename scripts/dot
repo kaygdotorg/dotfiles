@@ -307,6 +307,7 @@ update_atuin() {
 # Emacs is a user package owned by Home Manager/Nix. The Doom CLI lives in the
 # framework tree (~/.config/emacs/bin/doom).
 doom_framework="${HOME}/.config/emacs"
+doom_src="${repo_path}/doom-emacs"
 doom_dest="${HOME}/.config/doom"
 
 # Run a long command in a floating zellij pane so the user can keep working.
@@ -382,6 +383,17 @@ setup_doom() {
         printf '%s' "Installing Doom packages (this takes a while)"
         run_cmd "${doom_cli}" install
     fi
+
+    # 3. overlay the repo's Doom config over the deployed defaults
+    if [ -d "${doom_src}/.git" ]; then
+        # source is a git checkout of just the doom config
+        printf '%s' "Syncing tracked Doom config into ${doom_dest}"
+        run_cmd git -C "${doom_src}" archive HEAD | tar -x -C "${doom_dest}"
+    elif [ -f "${doom_src}/init.el" ]; then
+        # plain files tracked directly in this repository
+        printf '%s' "Copying tracked Doom config into ${doom_dest}"
+        run_cmd cp -p "${doom_src}"/init.el "${doom_src}"/config.el "${doom_src}"/packages.el "${doom_dest}"/
+    fi
 }
 
 update_doom() {
@@ -391,6 +403,15 @@ update_doom() {
     fi
     printf '%s' "Updating the Doom framework"
     run_cmd git -C "${doom_framework}" pull
+
+    # Overlay this repo's tracked Doom config (if any) over DOOMDIR.
+    if [ -d "${doom_src}/.git" ]; then
+        printf '%s' "Syncing tracked Doom config into ${doom_dest}"
+        run_cmd git -C "${doom_src}" archive HEAD | tar -x -C "${doom_dest}"
+    elif [ -f "${doom_src}/init.el" ]; then
+        printf '%s' "Copying tracked Doom config into ${doom_dest}"
+        run_cmd cp -p "${doom_src}"/init.el "${doom_src}"/config.el "${doom_src}"/packages.el "${doom_dest}"/
+    fi
 
     # Re-sync the Doom runtime after framework/config changes. Without the CLI
     # the pull alone is still safe.
