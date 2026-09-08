@@ -138,10 +138,11 @@ wizard_install_nix() {
             ;;
     esac
 
-    # make nix visible to THIS shell immediately
-    # shellcheck disable=SC1091
-    [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ] \
-        && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true
+    # make nix visible to THIS shell immediately; missing file is not an error
+    if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+        # shellcheck disable=SC1091
+        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    fi
 }
 
 # ----------------------------------------------------------------------------
