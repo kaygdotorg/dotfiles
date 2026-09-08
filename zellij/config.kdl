@@ -49,10 +49,14 @@ scroll_mode_sync false
 copy_on_select true
 
 // ---------------------------------------------------------------------------
-// clipboard — OSC 52 re-emit for nested SSH sessions
+// clipboard — OSC 52 via zellij's default path
 // ---------------------------------------------------------------------------
-
-copy_command "sh -c 'base64 | tr -d \"\\n\" | (printf \"\\033]52;c;%s\\a\" \"$(cat)\" > /dev/tty; cat > /dev/null)'"
+// No copy_command set on purpose. A copy_command is spawned by the zellij
+// SERVER process, which has no controlling terminal (fd 0 is /dev/null), so a
+// script writing to /dev/tty cannot reach the SSH client's terminal — selection
+// copies silently died. Without copy_command, zellij emits OSC 52 itself on its
+// client-side terminal channel, which is what made copy-on-select work in the
+// vanilla config. copy_on_select stays true (the default, pinned for clarity).
 
 // ---------------------------------------------------------------------------
 // contextual mode help
