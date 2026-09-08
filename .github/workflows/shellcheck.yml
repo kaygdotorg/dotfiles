@@ -22,7 +22,11 @@ jobs:
         # SC2317 (unreachable command) is excluded: `dot` dispatches through
         # "${action}_${app}", so every setup_*/update_* function looks unused
         # to static analysis. The next step covers that dispatch instead.
-        run: shellcheck --shell=sh --exclude=SC2317 scripts/dot scripts/lib/nix.sh
+        # scripts/dot is POSIX sh; scripts/lib/nix.sh is bash-flavored
+        # (local, BASH_SOURCE, $'..') and must be linted as bash.
+        run: |
+          shellcheck --shell=sh   --exclude=SC2317,SC2329 scripts/dot
+          shellcheck --shell=bash --exclude=SC2317,SC2329 scripts/lib/nix.sh
 
       - name: Check every dispatchable app has both actions
         # `dot <action> <app>` dispatches to "${action}_${app}" — a missing
