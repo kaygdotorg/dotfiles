@@ -30,7 +30,7 @@ layout {
             // command_userhost runs once (interval 0) and caches user@short-host;
             // the pill renders it before the session name so multi-host setups
             // can tell sessions apart. Pill caps are U+E0B6/U+E0B4 powerlines.
-            command_userhost_command "printf '%s@%s' \"$USER\" \"$(hostname -s)\""
+            command_userhost_command "sh -c \"printf '%s@%s' $USER $(hostname -s)\""
             command_userhost_interval "0"
             command_userhost_rendermode "static"
             format_session "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] ◆ {command_userhost}/{session_name} #[fg=#fab387,bg=default]"
