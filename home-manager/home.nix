@@ -44,9 +44,10 @@
     ++ [ (if pkgs.stdenv.hostPlatform.isDarwin
           then pkgs.ghostty-bin.terminfo
           else pkgs.ghostty.terminfo) ]
-    # macOS-only packages.
+    # console-only emacs: full GUI build is redundant on macOS too, the
+    # terminal is the interface (user preference, 2026-09).
     ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-      emacs
+      emacs-nox
     ];
 
   # OmniWM tiling window manager — macOS only (headless Linux hosts skip it).
