@@ -51,7 +51,7 @@ filter_mode = "host"
 ## To use workspace mode by default when available, set this to true and
 ## set filter_mode to "workspace" or leave it unspecified and
 ## set search.filters to include "workspace" before other filter modes.
-# workspaces = false
+workspaces = true
 
 ## which filter mode to use when atuin is invoked from a shell up-key binding
 ## the accepted values are identical to those of "filter_mode"
@@ -152,7 +152,11 @@ inline_height = 40
 ## 3. Slack oauth tokens (bot, user)
 ## 4. Slack webhooks
 ## 5. Stripe live/test keys
-# secrets_filter = true
+secrets_filter = true
+
+## Strip trailing whitespace from commands before saving (already the default;
+## pinned so the tracked config documents the protection).
+strip_trailing_whitespace = true
 
 ## Defaults to true. If enabled, upon hitting enter Atuin will immediately execute the command,
 ## whereas tab will put the command in the prompt for editing.
@@ -161,7 +165,7 @@ inline_height = 40
 enter_accept = true
 
 ## Defaults to false. If enabled, when triggered after &&, || or |, Atuin will complete commands to chain rather than replace the current line.
-# command_chaining = false
+command_chaining = true
 
 ## Defaults to "emacs".  This specifies the keymap on the startup of `atuin
 ## search`.  If this is set to "auto", the startup keymap mode in the Atuin
@@ -237,6 +241,8 @@ network_timeout = 30
 [ui]
 ## Columns for the interactive search; host column is key for multi-host setups.
 columns = [ "duration", "time", "host", "command" ]
+## Syntax-highlight the selected command in search results (18.18+).
+syntax_highlight = true
 
 [preview]
 ## which preview strategy to use to calculate the preview height (respects max_preview_height).
@@ -286,7 +292,7 @@ sync_frequency = 300
 
 [search]
 ## The list of enabled filter modes, in order of priority.
-filters = [ "host", "global", "session", "directory" ]
+filters = [ "host", "global", "session", "workspace", "directory" ]
 
 ## Show history from every shell, not just the current one (18.18+ default "auto").
 shells = "all"
