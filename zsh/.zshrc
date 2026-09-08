@@ -50,9 +50,8 @@ fi
 # ============================================================================
 # Interactive login: open the Zellij session manager, then keep zsh alive
 # ============================================================================
-# `zellij attach` alone only lists active sessions and exits when none exist.
-# A named manager session, created from the built-in session-manager layout,
-# stays available and lists both active and resurrectable sessions. It is
+# Zellij's built-in welcome layout is an ephemeral session picker. It lists
+# active and resurrectable sessions, then closes itself after a choice. It is
 # deliberately NOT exec'd, so leaving it returns to zsh rather than dropping
 # the NetBird SSH connection.
 # ============================================================================
@@ -60,7 +59,7 @@ if [[ $- == *i* ]] && [[ -t 0 ]] && [[ -t 1 ]] \
     && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
     && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]] \
     && command -v zellij >/dev/null 2>&1; then
-    zellij --layout session-manager attach --create zellij-manager
+    zellij --new-session-with-layout welcome
 fi
 
 # ============================================================================
@@ -263,12 +262,13 @@ if [[ -f "${NVM_DIR}/nvm.sh" ]]; then
 fi
 
 # Atuin (shell history with sync and search)
-# --disable-up-arrow: keep up/down for zsh-history-substring-search
-# ATUIN_TMUX_POPUP: run search in a tmux popup (own PTY, avoids ZLE fd issues)
+# --disable-up-arrow keeps up/down reserved for zsh-history-substring-search.
+# The popup backend is a tmux-only compatibility path. Keep it unset in Zellij
+# and ordinary shells, where Atuin uses its normal in-terminal UI.
 if [[ -f "$HOME/.atuin/bin/env" ]]; then
     . "$HOME/.atuin/bin/env"
     eval "$(atuin init zsh --disable-up-arrow)"
-    export ATUIN_TMUX_POPUP=true
+    [[ -n "${TMUX:-}" ]] && export ATUIN_TMUX_POPUP=true
 fi
 
 # zoxide (smart directory jumper, replaces z)
@@ -323,6 +323,23 @@ if command -v oh-my-posh 2>/dev/null 1>&2; then
 fi
 
 # ============================================================================
+# Zellij semantic prompt integration (OSC 133)
+# ============================================================================
+# Mark prompt, typed-command, command-output, and command completion boundaries
+# for Zellij 0.45+. This enables prompt-wise scrollback navigation, selecting a
+# command plus its output, copying the latest command output, and failed-command
+# markers. The escape sequences are metadata only; they do not change commands.
+_zellij_osc133_precmd() {
+    local exit_status=$?
+    printf '\e]133;D;%d\a\e]133;A\a' "$exit_status"
+}
+_zellij_osc133_preexec() {
+    printf '\e]133;C\a'
+}
+add-zsh-hook precmd _zellij_osc133_precmd
+add-zsh-hook preexec _zellij_osc133_preexec
+
+# ============================================================================
 # VI-MODE CURSOR SHAPE
 # ============================================================================
 # Beam cursor in insert mode, block cursor in normal mode.
@@ -334,8 +351,8 @@ zle-keymap-select() {
 }
 zle -N zle-keymap-select
 
-# Reset to beam on each new prompt
-zle-line-init() { print -n '\e[6 q' }
+# Reset to beam and mark the boundary between the prompt and typed command.
+zle-line-init() { printf '\e]133;B\a\e[6 q'; }
 zle -N zle-line-init
 
 # bun completions

@@ -12,7 +12,6 @@
       zoxide
       atuin
       zellij
-      tmux
 
       # file / text tools
       bat

@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|zellij|atuin|ssh|ghostty|karabiner|nix>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom-emacs|atuin|ssh|karabiner|nix>"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -113,64 +113,79 @@ update_dot() {
     run_cmd git -C "${repo_path}" pull
 }
 
-# tmux
-# Linking: tmux/.tmux.conf     → ~/.config/tmux/tmux.conf
-#          tmux/cheatsheet.sh  → ~/.config/tmux/cheatsheet.sh
-#          tmux/client-tune.sh → ~/.config/tmux/client-tune.sh
-#          tpm cloned into       ~/.config/tmux/plugins/tpm
-tmux_src="${repo_path}/tmux"
-
-setup_tmux() {
-    printf '%s' "Creating tmux configuration directory"
-    run_cmd mkdir -p "${HOME}/.config/tmux"
-
-    backup_if_real "${HOME}/.config/tmux/tmux.conf"
-
-    printf '%s' "Linking tmux configuration"
-    run_cmd ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.config/tmux/tmux.conf"
-
-    # helper scripts the config shells out to (cheatsheet popup, per-client
-    # tuning on attach)
-    for helper in cheatsheet.sh client-tune.sh; do
-        backup_if_real "${HOME}/.config/tmux/${helper}"
-
-        printf '%s' "Linking tmux ${helper}"
-        run_cmd ln -sf "${tmux_src}/${helper}" "${HOME}/.config/tmux/${helper}"
-    done
-
-    if [ -d "${HOME}/.config/tmux/plugins/tpm" ]; then
-        printf 'Installing tpm (tmux plugin manager) skipped (already exists: %s)\n' "${HOME}/.config/tmux/plugins/tpm"
-    else
-        printf '%s' "Creating tmux plugins directory"
-        run_cmd mkdir -p "${HOME}/.config/tmux/plugins"
-
-        printf '%s' "Installing tpm (tmux plugin manager)"
-        run_cmd git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.config/tmux/plugins/tpm"
-    fi
-}
-
-update_tmux() {
-    printf '%s\n' "No framework to update. Use prefix + U to update plugins."
-}
-
 # zellij
-# Linking: zellij/layouts/session-manager.kdl →
-#          ~/.config/zellij/layouts/session-manager.kdl
+# Linking: zellij/config.kdl      → ~/.config/zellij/config.kdl
+#          zellij/layouts/kayg.kdl → ~/.config/zellij/layouts/kayg.kdl
+# Downloading: hash-pinned releases named in zellij/plugins.lock →
+#              ~/.config/zellij/plugins/
+#
+# Zellij itself is a user package owned by Home Manager/Nix. This script owns
+# only dotfiles and explicitly approved plugin artifacts.
 zellij_src="${repo_path}/zellij"
 zellij_dest="${HOME}/.config/zellij"
 
+sha256_file() {
+    sha256sum "${1}" | awk '{print $1}'
+}
+
+install_locked_zellij_plugins() {
+    lockfile="${zellij_src}/plugins.lock"
+    plugins_dest="${zellij_dest}/plugins"
+
+    [ -r "${lockfile}" ] || { printf '%s\n' "Missing ${lockfile}"; exit 1; }
+    printf '%s' "Creating Zellij plugin directory"
+    run_cmd mkdir -p "${plugins_dest}"
+
+    while IFS='|' read -r filename version url expected_sha; do
+        case "${filename}" in ''|\#*) continue ;; esac
+        [ -n "${version}" ] && [ -n "${url}" ] && [ -n "${expected_sha}" ] || {
+            printf '%s\n' "Malformed plugin lock entry for ${filename}"; exit 1;
+        }
+        destination="${plugins_dest}/${filename}"
+        if [ -f "${destination}" ] && [ "$(sha256_file "${destination}")" = "${expected_sha}" ]; then
+            printf '%s\n' "Pinned ${filename} ${version} already verified"
+            continue
+        fi
+        temporary="$(mktemp "${destination}.tmp.XXXXXX")"
+        printf '%s' "Downloading pinned ${filename} ${version}"
+        if curl --fail --location --silent --show-error "${url}" -o "${temporary}" \
+            && [ "$(sha256_file "${temporary}")" = "${expected_sha}" ]; then
+            run_cmd mv "${temporary}" "${destination}"
+        else
+            rm -f "${temporary}"
+            printf '%s\n' " failed checksum or download for ${filename}"
+            exit 1
+        fi
+    done < "${lockfile}"
+}
+
 setup_zellij() {
-    printf '%s' "Creating Zellij layout directory"
+    check_if_installed_and_exit zellij
+    check_if_installed_and_exit curl
+    check_if_installed_and_exit sha256sum
+
+    printf '%s' "Creating Zellij configuration directories"
     run_cmd mkdir -p "${zellij_dest}/layouts"
 
-    backup_if_real "${zellij_dest}/layouts/session-manager.kdl"
+    for source in config.kdl layouts/kayg.kdl; do
+        destination="${zellij_dest}/${source}"
+        backup_if_real "${destination}"
+        printf '%s' "Linking Zellij ${source}"
+        run_cmd ln -sf "${zellij_src}/${source}" "${destination}"
+    done
 
-    printf '%s' "Linking Zellij session-manager layout"
-    run_cmd ln -sf "${zellij_src}/layouts/session-manager.kdl" "${zellij_dest}/layouts/session-manager.kdl"
+    install_locked_zellij_plugins
+
+    printf '%s' "Checking Zellij configuration"
+    run_cmd zellij setup --check
 }
 
 update_zellij() {
+    # Updates deliberately do not fetch a moving 'latest' release. A reviewer
+    # must update plugins.lock (version, URL, and hash) first; setup then
+    # converges every machine onto those approved bytes.
     setup_zellij
+    printf '%s\n' "Zellij plugins are already at the reviewed versions in plugins.lock."
 }
 
 # zsh
@@ -178,7 +193,8 @@ update_zellij() {
 #          zsh/.zshrc   → ~/.config/zsh/.zshrc
 #          zsh/omp.yaml → ~/.config/zsh/omp.yaml
 #          plugins cloned into ~/.config/zsh/plugins/
-#          oh-my-posh installed to ~/.local/bin/
+#
+# oh-my-posh is a user package owned by Home Manager/Nix, not installed here.
 zsh_src="${repo_path}/zsh"
 zsh_dest_zsh="${HOME}/.config/zsh"
 zsh_dest_plugins="${HOME}/.config/zsh/plugins"
@@ -188,35 +204,6 @@ zsh_plugins="
     https://github.com/zsh-users/zsh-history-substring-search
     https://github.com/zsh-users/zsh-syntax-highlighting
 "
-
-install_oh_my_posh() {
-    printf '%s' 'Installing oh-my-posh'
-
-    missing_cmds=""
-    for cmd in curl bash unzip realpath dirname mktemp; do
-        if ! check_if_installed "${cmd}"; then
-            missing_cmds="${missing_cmds} ${cmd}"
-        fi
-    done
-
-    if [ -n "${missing_cmds}" ]; then
-        printf ' skipped (missing:%s)\n' "${missing_cmds}"
-        return 0
-    fi
-
-    mkdir -p "${HOME}/.local/bin"
-
-    installer="$(mktemp)"
-    if curl -LsSf https://ohmyposh.dev/install.sh -o "${installer}" \
-        && bash "${installer}" -d "${HOME}/.local/bin" 1>/dev/null 2>/dev/null; then
-        rm -f "${installer}"
-        printf " done\n"
-    else
-        rm -f "${installer}"
-        printf " failed\n"
-        exit 1
-    fi
-}
 
 setup_zsh() {
     # symlink zshenv to $HOME so zsh picks up ZDOTDIR
@@ -253,10 +240,6 @@ setup_zsh() {
 
     printf '%s' 'Linking oh-my-posh configuration'
     run_cmd ln -sf "${zsh_src}/omp.yaml" "${zsh_dest_zsh}/omp.yaml"
-
-    # install oh-my-posh after config links so zsh remains usable if a dependency
-    # such as unzip is missing.
-    install_oh_my_posh
 }
 
 update_zsh() {
@@ -269,41 +252,22 @@ update_zsh() {
         printf '%s' "  Updating $(basename "${plugin}")"
         run_cmd git -C "${plugin}" pull
     done
-
-    install_oh_my_posh
 }
 
 # atuin
 # Linking: atuin/config.toml → ~/.config/atuin/config.toml
 #          atuin binary linked  ~/.local/bin/atuin
+#
+# The Atuin binary is a user package owned by Home Manager/Nix; this block only
+# links an existing ~/.atuin/bin/atuin into PATH and manages its dotfile.
 atuin_src="${repo_path}/atuin"
-
-install_atuin() {
-    printf '%s' "${1}"
-
-    check_if_installed_and_exit curl
-    check_if_installed_and_exit mktemp
-
-    installer="$(mktemp)"
-    if curl --proto '=https' --tlsv1.2 -LsSf \
-        https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh \
-        -o "${installer}" \
-        && sh "${installer}" --no-modify-path --quiet 1>/dev/null 2>/dev/null; then
-        rm -f "${installer}"
-        printf " done\n"
-    else
-        rm -f "${installer}"
-        printf " failed\n"
-        exit 1
-    fi
-}
 
 link_atuin() {
     printf '%s' 'Creating ~/.local/bin directory'
     run_cmd mkdir -p "${HOME}/.local/bin"
 
-    # symlink to ~/.local/bin so atuin is available in tmux popups
-    # (tmux global PATH doesn't include ~/.atuin/bin)
+    # symlink to ~/.local/bin so atuin stays on PATH even when a popup or
+    # daemon environment does not include ~/.atuin/bin
     backup_if_real "${HOME}/.local/bin/atuin"
 
     printf '%s' 'Linking atuin to ~/.local/bin'
@@ -319,12 +283,7 @@ link_atuin() {
 }
 
 setup_atuin() {
-    if [ -x "${HOME}/.atuin/bin/atuin" ]; then
-        printf '%s\n' "Atuin already installed at ${HOME}/.atuin/bin/atuin. Skipping install."
-    else
-        install_atuin 'Installing atuin'
-    fi
-
+    check_if_installed_and_exit atuin
     link_atuin
 
     printf '%s\n' 'Run the following to complete setup:'
@@ -335,8 +294,59 @@ setup_atuin() {
 }
 
 update_atuin() {
-    install_atuin 'Updating atuin'
-    link_atuin
+    setup_atuin
+}
+
+# doom-emacs
+# Cloning: doom-emacs/ → ~/.config/doom          (Doom's standard config dir)
+#          ~/.config/emacs is created by `doom install` as its runtime tree.
+#
+# Emacs and the `doom` CLI are user packages owned by Home Manager/Nix. The
+# config itself lives in this repository. First run after linking:
+#   doom doctor   (verify environment)
+doom_src="${repo_path}/doom-emacs"
+doom_dest="${HOME}/.config/doom"
+
+setup_doom() {
+    check_if_installed_and_exit emacs
+    check_if_installed_and_exit git
+
+    printf '%s' "Creating ~/.config directory"
+    run_cmd mkdir -p "${HOME}/.config"
+
+    if [ -d "${doom_dest}/.git" ]; then
+        printf '%s\n' "Doom config already installed at ${doom_dest}"
+    else
+        if [ -e "${doom_dest}" ]; then
+            printf '%s\n' "Cannot install Doom config: ${doom_dest} exists and is not a Doom checkout."
+            exit 1
+        fi
+        printf '%s' "Cloning Doom Emacs configuration into ${doom_dest}"
+        run_cmd git -C "${HOME}/.config" clone "${doom_src}" doom
+    fi
+
+    printf '%s' "Verifying the Doom environment"
+    if command -v doom >/dev/null 2>&1; then
+        run_cmd doom doctor
+    else
+        # intentional single quotes: the backtick is prose, not command
+        # substitution, so shellcheck's SC2016 hint does not apply.
+        printf ' skipped (doom CLI not on PATH; run `doom doctor` after installing Emacs)\n'
+    fi
+}
+
+update_doom() {
+    printf '%s' "Pulling latest Doom configuration"
+    run_cmd git -C "${doom_dest}" pull
+
+    # Re-sync the Doom runtime after config changes. The CLI is provided by
+    # Emacs/Nix; without it, the pull alone is still safe.
+    if command -v doom >/dev/null 2>&1; then
+        printf '%s' "Rebuilding the Doom runtime"
+        run_cmd doom sync
+    else
+        printf '%s\n' "Skipped 'doom sync' (doom CLI not on PATH)."
+    fi
 }
 
 # ssh
@@ -395,25 +405,6 @@ update_ssh() {
     setup_ssh
 }
 
-# ghostty
-# Linking: ghostty/config.ghostty → ~/.config/ghostty/config.ghostty
-ghostty_src="${repo_path}/ghostty"
-ghostty_dest="${HOME}/.config/ghostty"
-
-setup_ghostty() {
-    printf '%s' "Creating ${ghostty_dest} directory"
-    run_cmd mkdir -p "${ghostty_dest}"
-
-    backup_if_real "${ghostty_dest}/config.ghostty"
-
-    printf '%s' "Linking Ghostty configuration"
-    run_cmd ln -sf "${ghostty_src}/config.ghostty" "${ghostty_dest}/config.ghostty"
-}
-
-update_ghostty() {
-    setup_ghostty
-}
-
 # karabiner (macOS only)
 # Generates: ~/.config/karabiner/karabiner.json (via writeToProfile)
 karabiner_src="${repo_path}/karabiner-ts"
@@ -444,8 +435,11 @@ update_karabiner() {
 # missing (interactive), pins flake:nixpkgs to nixpkgs-unstable HEAD, then wires
 # the platform piece (Linux: systemd user timer for daily unstable refresh;
 # macOS: home-manager flake check + optional switch).
+# This is the only place dot touches packages: the Nix wizard installs the
+# package manager itself (no further sudo afterwards) and Home Manager owns
+# user packages.
 
-# shellcheck source=lib/nix.sh
+# shellcheck source=scripts/lib/nix.sh
 . "${script_path}/lib/nix.sh"
 
 setup_nix() {
@@ -474,16 +468,25 @@ main() {
     esac
 
     case "${app}" in
-        dot|tmux|zsh|zellij|atuin|ssh|ghostty|karabiner|nix) ;;
+        dot|zsh|zellij|doom-emacs|atuin|ssh|karabiner|nix) ;;
         *)
             usage
             exit 1
             ;;
     esac
 
+    # apps that must already exist as binaries; the rest are pure dotfile
+    # managers or shell-level helpers. nix is exempt because `dot setup nix`
+    # is itself the installer for the Nix package manager.
     case "${app}" in
-        dot|atuin|ghostty|karabiner) ;;
+        dot|doom-emacs|nix) ;;
         *) check_if_installed_and_exit "${app}" ;;
+    esac
+
+    # the dispatch function replaces the app's dashes with underscores:
+    # `setup doom-emacs` calls `setup_doom`
+    case "${app}" in
+        doom-emacs) app="doom" ;;
     esac
 
     "${action}_${app}"

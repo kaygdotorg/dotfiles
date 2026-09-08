@@ -1,9 +1,0 @@
-// persistent landing session for interactive logins
-// lists active and resurrectable Zellij sessions.
-layout {
-    pane borderless=true {
-        plugin location="zellij:session-manager" {
-            multi_screen false
-        }
-    }
-}

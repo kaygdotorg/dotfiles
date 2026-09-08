@@ -1,0 +1,119 @@
+// zellij config — custom `kayg` layout plus stock behavior:
+//   1. a Catppuccin Mocha zjstatus pill bar at the bottom
+//   2. Ctrl+g retains Zellij's stock lock/unlock binding
+//   3. compact-bar runs invisibly with an F24 sentinel to supply contextual
+//      mode tooltips without a persistent compact-bar row
+//   4. rounded pane frames, mouse ergonomics, OSC 52 clipboard, and bounded
+//      scrollback resurrection
+//
+// Everything not configured below uses stock Zellij behaviour.
+
+// ---------------------------------------------------------------------------
+// session behaviour
+// ---------------------------------------------------------------------------
+
+session {
+    // closing the last tab returns to the session manager (not exit)
+}
+
+serialize-pane true
+
+// ---------------------------------------------------------------------------
+// ui
+// ---------------------------------------------------------------------------
+
+theme "catppuccin-mocha"
+
+ui {
+    pane_frames {
+        rounded_corners true
+        hide_session_name true
+    }
+}
+
+default_layout "kayg"
+
+// Keep 50k lines while the session is running. On resurrection, persist only
+// the most recent 5k lines to keep cache growth and restore I/O bounded.
+scroll_buffer_size 50000
+scrollback_lines_to_serialize 5000
+
+// ---------------------------------------------------------------------------
+// mouse + scrolling
+// ---------------------------------------------------------------------------
+
+mouse_mode true
+scroll_speed 3
+// Do not implicitly enter/exit Zellij scroll mode while using a wheel/trackpad.
+scroll_mode_sync false
+copy_on_select true
+
+// ---------------------------------------------------------------------------
+// clipboard — OSC 52 re-emit for nested SSH sessions
+// ---------------------------------------------------------------------------
+
+copy_command "sh -c 'base64 | tr -d \"\\n\" | (printf \"\\033]52;c;%s\\a\" \"$(cat)\" > /dev/tty; cat > /dev/null)'"
+
+// ---------------------------------------------------------------------------
+// contextual mode help
+// ---------------------------------------------------------------------------
+// Ctrl+g is deliberately left to Zellij's stock lock/unlock binding. The
+// background-only compact-bar instance below receives mode changes and renders
+// its built-in floating shortcut tooltip without taking up a visible row.
+
+// ---------------------------------------------------------------------------
+// themes
+// ---------------------------------------------------------------------------
+
+themes {
+    catppuccin-mocha {
+        bg "#585b70"      // surface1
+        fg "#cdd6f4"      // text
+        red "#f38ba8"
+        green "#a6e3a1"
+        yellow "#f9e2af"
+        blue "#89b4fa"
+        magenta "#cba6f7"
+        orange "#fab387"
+        cyan "#94e2d5"
+        black "#1e1e2e"   // base
+        white "#cdd6f4"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// background plugins
+// ---------------------------------------------------------------------------
+
+// zellij-tabula: auto-rename tabs from the focused pane's working directory
+// (v0.5.0, vendored at ~/.config/zellij/plugins/)
+load_plugins {
+    "file:/home/kayg/.config/zellij/plugins/zellij-tabula.wasm" {
+        home_dir "/home/kayg"
+        worktree_name_display "repo_and_worktree"
+        worktree_name_preview_length "10"
+    }
+    // Background-only host for Zellij's built-in dynamic keybinding tooltip.
+    // F24 is an unreachable sentinel, preserving Ctrl+g for lock/unlock.
+    "zellij:compact-bar" {
+        tooltip "F24"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// session resurrection (survives reboot/kill with screen content)
+// ---------------------------------------------------------------------------
+
+// serialize the visible pane content so resurrected sessions come back with
+// their screen intact (default false; session_serialization itself is on by
+// default with a 60s interval)
+serialize_pane_viewport true
+
+// ---------------------------------------------------------------------------
+// mouse conveniences (both default false)
+// ---------------------------------------------------------------------------
+
+// hover a pane to focus it
+focus_follows_mouse true
+// clicks pass straight into the running program instead of only focusing
+mouse_click_through true

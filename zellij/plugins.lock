@@ -1,0 +1,8 @@
+# Zellij plugin lockfile
+#
+# Fields are pipe-separated: destination filename | upstream version | immutable
+# release-asset URL | sha256. `dot setup zellij` downloads only these exact
+# bytes and rejects a checksum mismatch. Update this file in review before a
+# plugin upgrade; `dot update zellij` reports newer upstream releases only.
+zjstatus.wasm|v0.25.0|https://github.com/dj95/zjstatus/releases/download/v0.25.0/zjstatus.wasm|282ceab219e56e1908c9fac33907241fe6c3e1ef7d85faab3e5f438cef87b8fe
+zellij-tabula.wasm|v0.5.0|https://github.com/bezbac/zellij-tabula/releases/download/v0.5.0/zellij-tabula.wasm|1ca92abefdb173906f391ec613e446906a2d59c3b38e15175b8980a7ce503f8f

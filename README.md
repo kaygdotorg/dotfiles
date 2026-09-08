@@ -35,15 +35,18 @@ The `dot` script handles all linking and installation. Start by symlinking it in
 Then set up whichever apps you need:
 
 ```bash
+dot setup nix          # installs the Nix package manager + wires Home Manager
 dot setup zsh
-dot setup tmux
+dot setup zellij
+dot setup doom-emacs
 dot setup atuin
 dot setup ssh
-dot setup ghostty
-dot setup karabiner  # macOS only, requires npm
+dot setup karabiner    # macOS only, requires npm
 ```
 
-Each `dot setup <app>` command creates the necessary directories, symlinks configuration files from this repository into the correct system paths, and installs any dependencies (plugins, binaries, etc.). Running setup again is safe: existing symlinks are overwritten, existing zsh plugins are skipped, and existing Atuin installs are reused.
+Each `dot setup <app>` command creates the necessary directories, symlinks configuration files from this repository into the correct system paths, and fetches only the hash-pinned plugin artifacts named in a lockfile. Running setup again is safe: existing symlinks are overwritten, existing zsh plugins are skipped, and hash-verified plugins are reused.
+
+**Division of responsibility:** `dot` manages *dotfiles only*. User packages (zellij, zsh plugins' binaries, oh-my-posh, atuin, emacs, and friends) are owned by Home Manager/Nix. The one exception is `dot setup nix`, which installs the Nix package manager itself — after that initial run, no further sudo is needed.
 
 **Pre-existing files are never destroyed.** If a real file (rather than one of our symlinks) already sits at a destination — a distro-provided `~/.zshenv`, an `~/.ssh/config` you wrote by hand — it is moved to `<file>.bak.<timestamp>` before the symlink is created, and the backup is announced as it happens.
 
@@ -58,7 +61,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI accepts exactly two arguments:
 
 ```bash
-dot <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner>
+dot <setup|update> <dot|zsh|zellij|doom-emacs|atuin|ssh|karabiner|nix>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -66,19 +69,24 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 ### Re-running setup commands
 
 - `dot setup zsh` reuses the existing install directory and skips plugin repos that are already present.
-- `dot setup atuin` reuses an existing `~/.atuin/bin/atuin` installation, ensures `~/.local/bin` exists, and then refreshes the symlink/config.
-- `dot setup dot`, `dot setup tmux`, `dot setup ssh`, and `dot setup ghostty` are symlink-based and can be run repeatedly.
+- `dot setup zellij` links the tracked `config.kdl` and `kayg.kdl`, then downloads only the exact hash-pinned Zellij plugins listed in `zellij/plugins.lock`. A checksum mismatch aborts rather than installing unverified bytes.
+- `dot update zellij` never fetches a moving "latest" release. To upgrade a plugin, update its entry in `zellij/plugins.lock` (version, URL, sha256) after review, then rerun setup on each machine.
+- `dot setup doom-emacs` clones this repo's Doom config into `~/.config/doom` (Doom's standard location) and requires Emacs to already be installed. Use `doom doctor` to verify the environment and `dot update doom-emacs` to pull plus `doom sync`.
+- `dot setup atuin` links an existing Atuin install into `~/.local/bin` and refreshes its config; the binary itself comes from Home Manager/Nix.
+- `dot setup dot`, `dot setup ssh`, and `dot setup karabiner` are symlink/generation-based and can be run repeatedly.
 - `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten.
 - `dot setup karabiner` refuses to run anywhere but macOS.
+- `dot setup nix` is idempotent: it installs Determinate Nix if missing, re-pins `nixpkgs` to unstable HEAD, wires the platform auto-update (Linux systemd user timer, macOS LaunchAgent), and verifies the daemon, pin, and Home Manager flake end to end.
 
 ## Apps
 
-- **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
-- **Tmux** — Standalone configuration with Catppuccin Mocha theme, OSC 52 clipboard support for nested sessions, vi-mode copy bindings, mouse support, `F12`/`M-F` pass-through toggle for nested sessions, searchable keybindings cheatsheet (`prefix + ?`), per-client tuning on attach, and [TPM](https://github.com/tmux-plugins/tpm) for plugin management.
+- **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, OSC 133 semantic-prompt marks for Zellij, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
+- **Zellij** — Catppuccin Mocha theme, a custom bottom `zjstatus` pill bar (`kayg` layout), a background compact-bar that renders contextual mode tooltips without a persistent status row, mouse ergonomics, OSC 52 clipboard, and bounded scrollback resurrection. WASM plugins (`zjstatus`, `zellij-tabula`) are pinned by hash in `zellij/plugins.lock`.
+- **Doom Emacs** — Doom configuration cloned into `~/.config/doom`; Emacs itself is a Home Manager package.
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
 - **SSH** — Managed SSH client configuration, tuned for mobile links (keepalives, connection multiplexing), with machine-local hosts kept out of the repository in `~/.ssh/config.local`.
-- **Ghostty** — 75% opaque terminal background with the native macOS 26 Liquid Glass blur effect.
 - **Karabiner** — Advanced keyboard customization via [karabiner.ts](https://github.com/evan-liu/karabiner.ts) with Colemak-DH layout and hyper key layers.
+- **Home Manager / Nix** — User package management for every machine. The flake lives in `home-manager/` (macOS) and `dot setup nix` wires the package manager and its daily auto-update.
 
 ## Repository Structure
 
@@ -95,19 +103,19 @@ Configuration files are stored flat under each app's directory. The `dot` script
 │   ├── .zshenv              # Sets ZDOTDIR so zsh finds its config
 │   ├── .zshrc               # Main shell configuration
 │   └── omp.yaml             # Oh My Posh prompt theme
-├── tmux/
-│   ├── .tmux.conf           # Tmux configuration
-│   ├── cheatsheet.sh        # prefix + ? keybindings popup
-│   └── client-tune.sh       # Per-client tuning, run on every attach
+├── zellij/
+│   ├── config.kdl           # Zellij configuration
+│   ├── layouts/kayg.kdl     # Custom bottom status-bar layout
+│   └── plugins.lock         # Hash-pinned Zellij plugin releases
+├── doom-emacs/              # Doom Emacs configuration (cloned to ~/.config/doom)
 ├── atuin/
 │   └── config.toml          # Atuin shell history configuration
-├── ghostty/
-│   └── config.ghostty       # Ghostty terminal configuration
 ├── .ssh/
 │   ├── config               # SSH client configuration
 │   └── config.local.example # Template for machine-local hosts (untracked)
-└── karabiner-ts/
-    └── index.ts             # Generates Karabiner-Elements JSON profile
+├── karabiner-ts/
+│   └── index.ts             # Generates Karabiner-Elements JSON profile
+└── home-manager/            # Nix/Home Manager flake (user packages)
 ```
 
 ### Linking map
@@ -120,30 +128,30 @@ graph LR
         A["zsh/.zshenv"]
         B["zsh/.zshrc"]
         C["zsh/omp.yaml"]
-        D["tmux/.tmux.conf"]
-        D2["tmux/cheatsheet.sh"]
-        D3["tmux/client-tune.sh"]
+        D["zellij/config.kdl"]
+        D2["zellij/layouts/kayg.kdl"]
+        D3["zellij/plugins.lock"]
         E["atuin/config.toml"]
         F[".ssh/config"]
         F2[".ssh/config.local.example"]
-        I["ghostty/config.ghostty"]
         G["karabiner-ts/index.ts"]
         H["scripts/dot"]
+        X["doom-emacs/"]
     end
 
     subgraph System
         A1["~/.zshenv"]
         B1["~/.config/zsh/.zshrc"]
         C1["~/.config/zsh/omp.yaml"]
-        D1["~/.config/tmux/tmux.conf"]
-        D21["~/.config/tmux/cheatsheet.sh"]
-        D31["~/.config/tmux/client-tune.sh"]
+        D1["~/.config/zellij/config.kdl"]
+        D21["~/.config/zellij/layouts/kayg.kdl"]
+        D31["~/.config/zellij/plugins/*.wasm"]
         E1["~/.config/atuin/config.toml"]
         F1["~/.ssh/config"]
         F21["~/.ssh/config.local"]
-        I1["~/.config/ghostty/config.ghostty"]
         G1["~/.config/karabiner/karabiner.json"]
         H1["~/.local/bin/dot"]
+        X1["~/.config/doom"]
     end
 
     A -->|symlink| A1
@@ -151,108 +159,26 @@ graph LR
     C -->|symlink| C1
     D -->|symlink| D1
     D2 -->|symlink| D21
-    D3 -->|symlink| D31
+    D3 -->|hash-pinned download| D31
     E -->|symlink| E1
     F -->|symlink| F1
     F2 -->|copy once| F21
-    I -->|symlink| I1
     G -->|generates| G1
     H -->|symlink| H1
+    X -->|clone| X1
 ```
 
 > **Note:** Karabiner is the exception — its local npm dependencies are installed and `index.ts` is executed via `tsx`, which writes the profile JSON directly to `~/.config/karabiner/karabiner.json`. It is not symlinked.
 
 ## Quirks
 
-### Nested tmux clipboard (inner SSH → outer Mac → iTerm2)
+### Skipping the Zellij autostart
 
-Tmux's `set-clipboard on` correctly intercepts and re-emits OSC 52 escape sequences from applications (e.g., a `printf` in the shell or vim yanking), but it does **not** emit OSC 52 from its own copy mode when running nested inside another tmux (`TERM=tmux-256color`). This means yanking or mouse-selecting in copy mode silently fails to reach the outer clipboard.
-
-The workaround: all copy-mode bindings use `copy-pipe-and-cancel` with an explicit command that base64-encodes the selection and writes an OSC 52 sequence directly to `#{client_tty}` (the terminal the tmux client is attached to). The full clipboard chain looks like this:
-
-```mermaid
-graph LR
-    A["Copy-mode selection"] --> B["copy-pipe base64-encodes\nand writes OSC 52\nto #{client_tty}"]
-    B --> C["SSH forwards bytes"]
-    C --> D["Outer tmux intercepts\n(set-clipboard on)\nand re-emits OSC 52"]
-    D --> E["iTerm2 sets\nmacOS clipboard"]
-```
-
-See the clipboard and copy-mode sections in `tmux/.tmux.conf` for the full implementation and explanation.
-
-### Nested tmux pass-through (F12 or M-F)
-
-When running tmux inside tmux (e.g., SSH into a remote machine that also runs tmux), key bindings are captured by the outer session. Press `F12` **or `M-F`** to toggle pass-through mode — all keys go directly to the inner tmux. The outer status bar shows a red `PASS` pill while it is active, and both keys print a confirmation message. Press either key again to return to normal mode.
-
-Two keys are bound on purpose. Apple's Magic Keyboard and Smart Keyboard Folio for iPad have **no function row**, so on an iPad `F12` is unreachable — leaving no way into pass-through and, more importantly, no way back out of it. `M-F` is Alt+Shift+F, chosen so it does not shadow readline's `M-f` (forward-word); `C-\` was avoided because it is SIGQUIT.
-
-Both keys are bound in the `root` **and** `off` key tables, because pass-through disables the prefix — the key that turns it back off cannot be a prefix binding.
-
-### Per-client tuning on attach
-
-Status bar position, refresh interval and the padding row are decided per client by `tmux/client-tune.sh`, wired to tmux's `client-attached` and `client-session-changed` hooks. The second hook matters because the tuning is stored in *session* options: without it, a session created later (`prefix + C-c`) or switched to would keep the global defaults.
-
-The hooks pass `#{client_height}` and `#{client_session}` to the script as arguments. Asking tmux from inside the script instead — an untargeted `display-message -p` — is racy: during a session change it was observed reporting the session being switched *away* from, which tuned the wrong session.
-
-This used to be three `if-shell` blocks in `tmux.conf`, which were quietly wrong. **`if-shell` evaluates against the tmux _server's_ environment, which is frozen when the server first starts.** Since `.zshrc` auto-starts tmux, the server is nearly always started by a local client — so every later attach from an iPad or over SSH was still judged "local", and `prefix + r` could not change the verdict either.
-
-The hook re-runs on every attach and reads the attaching client's own `SSH_CONNECTION`, which tmux copies into the session environment via `update-environment` (and marks as removed on a local attach). Note that `escape-time` cannot participate: it is a server option and can never vary per client, so it is set once to the mobile-safe 50ms.
-
-### Keybindings cheatsheet (prefix + ?)
-
-Press `prefix + ?` to open a searchable, scrollable popup listing every key binding with human-readable descriptions. It covers all three key tables (prefix, root, copy mode) and includes plugin bindings. Use `/` to search, arrow keys or `j`/`k` to scroll, and `q` to close.
-
-The implementation lives in `tmux/cheatsheet.sh` rather than inline in `tmux.conf`, where it had grown into a single escaped one-liner of embedded awk that could not be reviewed or edited without counting backslashes.
-
-### iOS and iPadOS (rootshell)
-
-[rootshell](https://www.rootshell.com/) is the terminal used on iPhone and iPad. Three settings in `tmux.conf` are there because rootshell asks for them specifically:
-
-```tmux
-set -g mouse on
-set -g set-titles on
-set -g set-titles-string '#T'
-```
-
-The bare `#T` matters: rootshell names tabs from what the pane reports, so a decorated title string gives it a decorated tab name.
-
-Other things worth knowing on a phone or tablet:
-
-- **Pass-through needs `M-F`**, not `F12` — see above.
-- **Truecolor**: rootshell is [libghostty](https://ghostty.org)-based and reports `xterm-ghostty`. The config now flags `RGB` for every terminal (`terminal-features ",*:RGB"`); previously only an exact `xterm-256color` got truecolor, so the Catppuccin hexes were being quantized. If a server has no terminfo entry for `xterm-ghostty`, either install it there or set `SetEnv TERM=xterm-256color` for that host in `~/.ssh/config.local`.
-- **Two devices, one session**: `window-size latest` and `aggressive-resize on` stop a phone attaching from reflowing the panes on the desktop. `prefix + D` detaches every other client.
-- **A private view per device**: set `TMUX_CLIENT_NAME` in the terminal app's per-connection environment and `.zshrc` will attach a *grouped* session — the same windows as `work`, but with its own current window and its own size. Without it, behaviour is unchanged.
-- **The padding row is dropped on short clients** (under 30 rows), where it costs a tenth of the screen.
-- **Touch selection vs. mouse mode**: with `mouse on`, drag gestures go to tmux. `prefix + m` toggles mouse mode off if you would rather select text with a finger.
-
-### Skipping the tmux autostart
-
-`.zshrc` execs into tmux for interactive shells. It stays out of the way when it should: transfers (scp/rsync/sftp) are not interactive, and a forced command — VS Code Remote, `ssh host cmd`, editor and agent remotes — is skipped via `SSH_ORIGINAL_COMMAND`. To opt out by hand for one connection:
+`.zshrc` opens the Zellij session picker for interactive shells. It stays out of the way when it should: transfers (scp/rsync/sftp) are not interactive, and a forced command — VS Code Remote, `ssh host cmd`, editor and agent remotes — is skipped via `SSH_ORIGINAL_COMMAND`. To opt out by hand for one connection:
 
 ```bash
-DOT_NO_AUTOTMUX=1 ssh somehost
+DOT_NO_AUTOMUX=1 ssh somehost
 ```
-
-### Paste buffer reference view
-
-Tmux stores every yanked selection in a paste buffer stack. Two bindings make it easy to reference previous yanks while working:
-
-- **`Y` in copy mode** — Yanks the selection to both the paste buffer and the system clipboard (via OSC 52), then immediately opens it in a resizable split pane for reference.
-- **`prefix + b`** — Browse all paste buffers, select one, and open it in a split pane. Use `prefix + =` to browse and paste instead.
-
-The reference split is scrollable and searchable (powered by `less`), resizable with `prefix + H/J/K/L` or mouse drag, and closes with `q`.
-
-### Shift+Enter in Claude Code inside tmux
-
-Shift+Enter for newlines does not work inside tmux. Tmux only forwards extended key sequences (kitty keyboard protocol) to applications that explicitly request them, and Claude Code does not opt in.
-
-The `extended-keys always` setting would fix this, but it causes breakage elsewhere:
-
-- Shift+Tab sends raw escape codes instead of working properly ([tmux#4304](https://github.com/tmux/tmux/issues/4304))
-- Pasting in Neovim produces artifacts ([gpakosz/.tmux#776](https://github.com/gpakosz/.tmux/issues/776))
-- Fish shell completions break in tmux 3.5+ ([tmux#2705](https://github.com/tmux/tmux/issues/2705))
-
-**Use `\` + Enter for newlines in Claude Code instead.** This is documented in the terminal section of `tmux/.tmux.conf`.
 
 ## License
 
