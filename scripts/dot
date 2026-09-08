@@ -330,7 +330,8 @@ setup_doom() {
         run_cmd doom doctor
     else
         # intentional single quotes: the backtick is prose, not command
-        # substitution, so shellcheck's SC2016 hint does not apply.
+        # substitution, so shellcheck's SC2016 hint does not apply here.
+        # shellcheck disable=SC2016
         printf ' skipped (doom CLI not on PATH; run `doom doctor` after installing Emacs)\n'
     fi
 }
@@ -439,7 +440,8 @@ update_karabiner() {
 # package manager itself (no further sudo afterwards) and Home Manager owns
 # user packages.
 
-# shellcheck source=scripts/lib/nix.sh
+# sourced lib is bash-flavored (local, BASH_SOURCE); linted separately as bash
+# shellcheck disable=SC1091
 . "${script_path}/lib/nix.sh"
 
 setup_nix() {

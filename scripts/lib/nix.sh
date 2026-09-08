@@ -77,7 +77,9 @@ ask_yes_no() {
 
 wizard_os="$(uname -s)"                     # Darwin | Linux
 wizard_arch="$(uname -m)"                   # arm64/aarch64 | x86_64
-NIX_PROFILE_BIN="/nix/var/nix/profiles/default/bin"
+# Canonical profile location, exported for downstream shells and units that
+# source this file; the wizard itself resolves nix via PATH or this path.
+export NIX_PROFILE_BIN="/nix/var/nix/profiles/default/bin"
 
 wizard_nix_present() {
     command -v nix >/dev/null 2>&1 || [ -x /nix/var/nix/profiles/default/bin/nix ]
