@@ -309,19 +309,39 @@ update_atuin() {
 doom_framework="${HOME}/.config/emacs"
 doom_dest="${HOME}/.config/doom"
 
-# Run a long command in a floating zellij pane when possible so the user can
-# keep working. Falls back to running it in the foreground.
+# Run a long command in a floating zellij pane so the user can keep working.
 # Args: pane-name, command...
+# A bare `zellij action ...` from inside a pane can hang on the session socket
+# (observed on 0.45.x: the CLI call blocks and no pane ever opens), so the call
+# targets the session explicitly and gets a hang guard: if the CLI call has not
+# returned within 10 seconds it is killed and the caller falls back to running
+# the command in the foreground. A successful spawn returns immediately.
 run_in_floating_pane() {
     pane_name="${1}"
     shift
-    if command -v zellij >/dev/null 2>&1 && [ -n "${ZELLIJ_SESSION_NAME:-}" ]; then
-        printf '%s\n' "Launching '${pane_name}' in a floating zellij pane (you can keep working; the pane closes when it finishes)"
-        # shellcheck disable=SC2086  # words are intentionally split
-        zellij action new-pane --floating --close-on-exit --name "${pane_name}" -- "$@"
-        return 0
+    if ! command -v zellij >/dev/null 2>&1 || [ -z "${ZELLIJ_SESSION_NAME:-}" ]; then
+        return 1
     fi
-    return 1
+
+    printf '%s\n' "Launching '${pane_name}' in a floating zellij pane (you can keep working; the pane closes when it finishes)"
+    zellij --session "${ZELLIJ_SESSION_NAME}" action new-pane \
+        --floating --close-on-exit --name "${pane_name}" -- "$@" &
+    pane_pid="${!}"
+
+    # guard: if the action CLI hangs, kill it and report failure
+    counter=0
+    while kill -0 "${pane_pid}" 2>/dev/null; do
+        counter=$((counter + 1))
+        if [ "${counter}" -ge 50 ]; then   # 50 x 0.1s = 5s
+            kill "${pane_pid}" 2>/dev/null || true
+            wait "${pane_pid}" 2>/dev/null
+            printf '%s\n' "zellij action did not return; falling back to foreground"
+            return 1
+        fi
+        sleep 0.1
+    done
+    wait "${pane_pid}" 2>/dev/null
+    return 0
 }
 
 setup_doom() {
