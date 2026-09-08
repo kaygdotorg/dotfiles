@@ -263,10 +263,11 @@ fi
 
 # Atuin (shell history with sync and search)
 # --disable-up-arrow keeps up/down reserved for zsh-history-substring-search.
+# The binary is owned by Home Manager/Nix on every host, so test for the
+# command rather than the legacy ~/.atuin installer path.
 # The popup backend is a tmux-only compatibility path. Keep it unset in Zellij
 # and ordinary shells, where Atuin uses its normal in-terminal UI.
-if [[ -f "$HOME/.atuin/bin/env" ]]; then
-    . "$HOME/.atuin/bin/env"
+if (( $+commands[atuin] )); then
     eval "$(atuin init zsh --disable-up-arrow)"
     [[ -n "${TMUX:-}" ]] && export ATUIN_TMUX_POPUP=true
 fi
