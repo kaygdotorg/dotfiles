@@ -6,8 +6,14 @@
 // approach stopped working — it never passed keys to the plugin, leaving it
 // with an empty config and an error banner).
 //
-// Pill style: powerline round caps (U+E0B6 / U+E0B4) with explicit
-// bg=default on the cap cells so no pill bg bleeds outside the pill.
+// zjstatus top-level handles are ONLY the widgets placed into format_left /
+// format_center / format_right ({session}, {tabs}, {mode}, {command_NAME},
+// {datetime}, {pipe_NAME}, ...). There are no format_session/format_mode
+// keys — extra "format_*" keys in the plugin block are silently ignored
+// (verified against zjstatus v0.25.0 source).
+//
+// Pill style: powerline round caps (U+E0B6 opens / U+E0B4 closes) with
+// explicit bg=default on the cap cells so no pill bg bleeds outside the pill.
 layout {
     pane
     // Bottom status bar. The built-in compact-bar runs in the background from
@@ -15,28 +21,31 @@ layout {
     pane size=1 borderless=true {
         plugin location="file:~/.config/zellij/plugins/zjstatus.wasm" {
             // ------------------------------------------------ left ----
-            // tabs first, each in its own rounded pill; the session pill
-            // prepends user@hostname via zjstatus command_ substitutions
-            format_left "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] {session} #[fg=#fab387,bg=default] {tabs}"
+            // session pill (peach) first, then tabs, each in its own pill.
+            // {session} is the session name (no {session_name} exists);
+            // user@host comes from the command_userhost widget (interval 0,
+            // runs once, cached).
+            format_left "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] {session} #[fg=#fab387,bg=default] {tabs}"
 
             tab_normal "#[fg=#585b70,bg=default]#[bg=#585b70,fg=#9399b2] {index} {name} #[fg=#585b70,bg=default]"
             tab_active "#[fg=#cba6f7,bg=default]#[bg=#cba6f7,fg=#1e1e2e,bold] {index} {name} #[fg=#cba6f7,bg=default]"
             tab_separator "  "
 
             // ------------------------------------------------ right ----
-            format_right " {mode} "
+            // the {mode} pill reuses the mode_* formats below; {mode} inside
+            // format_right is replaced by the active mode pill's contents.
 
-            // session pill (peach, intentionally distinct from mauve active tabs).
-            // command_userhost runs once (interval 0) and caches user@short-host;
-            // the pill renders it before the session name so multi-host setups
-            // can tell sessions apart. Pill caps are U+E0B6/U+E0B4 powerlines.
-            command_userhost_command "sh -c \"printf '%s@%s' $USER $(hostname -s)\""
+            // user@host pill command (green, distinct from sapphire session pill).
+            // id -un is used instead of $USER because zellij's
+            // plugin-spawned processes may not export USER. Pill caps are
+            // U+E0B6 (left, round) / U+E0B4 (right, round) powerlines.
+            command_userhost_command "sh -c \"printf '%s@%s' $(id -un) $(hostname -s)\""
             command_userhost_interval "0"
+            command_userhost_format "#[fg=#a6e3a1,bg=default]#[bg=#a6e3a1,fg=#1e1e2e,bold] {stdout} #[fg=#a6e3a1,bg=default]"
             command_userhost_rendermode "static"
-            format_session "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] ◆ {command_userhost}/{session_name} #[fg=#fab387,bg=default]"
 
-            // mode pills
-            format_mode "#[fg=#89b4fa,bg=default]#[bg=#89b4fa,fg=#1e1e2e,bold] {mode} #[fg=#89b4fa,bg=default]"
+            // mode pill (right side; re-colored per mode via mode_* below)
+            format_right " {mode} #[fg=#a6e3a1,bg=default]{command_userhost} "
 mode_normal "#[fg=#45475a,bg=default]#[bg=#45475a,fg=#cdd6f4] normal #[fg=#45475a,bg=default]"
 mode_locked "#[fg=#f38ba8,bg=default]#[bg=#f38ba8,fg=#1e1e2e,bold] locked #[fg=#f38ba8,bg=default]"
 mode_pane "#[fg=#f9e2af,bg=default]#[bg=#f9e2af,fg=#1e1e2e,bold] pane #[fg=#f9e2af,bg=default]"
@@ -50,13 +59,10 @@ mode_prompt "#[fg=#f9e2af,bg=default]#[bg=#f9e2af,fg=#1e1e2e,bold] prompt #[f
 mode_rename_pane "#[fg=#f9e2af,bg=default]#[bg=#f9e2af,fg=#1e1e2e,bold] rename_pane #[fg=#f9e2af,bg=default]"
 mode_rename_tab "#[fg=#f9e2af,bg=default]#[bg=#f9e2af,fg=#1e1e2e,bold] rename_tab #[fg=#f9e2af,bg=default]"
 
-            // ------------------------------------------- behaviour ----
-            // hide the stock hint text in the top bar (bottom bar is
-            // tooltip-gated by the compact-bar block below)
-            hide_normal_hints true
-
-            // render interval (ms)
-            render_interval "1000"
+            // ------------------------------------------- behaviour -----
+            // no zjstatus keys control the stock hint bar; hints are hidden
+            // because this layout has no hint-producing pane and the
+            // compact-bar tooltip is gated by the config.kdl background block
         }
     }
 }
