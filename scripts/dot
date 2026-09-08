@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom-emacs|atuin|ssh|karabiner|nix>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom|atuin|ssh|karabiner|nix>"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -299,8 +299,8 @@ update_atuin() {
     setup_atuin
 }
 
-# doom-emacs
-# Cloning: doom-emacs/ → ~/.config/doom          (Doom's standard config dir)
+# doom
+# Cloning: doom-emacs/ → ~/.config/doom    (Doom's standard config dir)
 #          ~/.config/emacs is created by `doom install` as its runtime tree.
 #
 # Emacs and the `doom` CLI are user packages owned by Home Manager/Nix. The
@@ -323,6 +323,11 @@ setup_doom() {
             printf '%s\n' "Cannot install Doom config: ${doom_dest} exists and is not a Doom checkout."
             exit 1
         fi
+        if [ ! -d "${doom_src}/.git" ] && [ -z "$(ls -A "${doom_src}" 2>/dev/null)" ]; then
+            printf '%s\n' "No Doom config is tracked in this repository yet."
+            printf '%s\n' "Expected a git repo or files under ${doom_src}."
+            exit 1
+        fi
         printf '%s' "Cloning Doom Emacs configuration into ${doom_dest}"
         run_cmd git -C "${HOME}/.config" clone "${doom_src}" doom
     fi
@@ -339,6 +344,10 @@ setup_doom() {
 }
 
 update_doom() {
+    if [ ! -d "${doom_dest}/.git" ]; then
+        printf '%s\n' "No Doom config checkout at ${doom_dest}; run 'dot setup doom' first."
+        exit 1
+    fi
     printf '%s' "Pulling latest Doom configuration"
     run_cmd git -C "${doom_dest}" pull
 
@@ -472,7 +481,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|zsh|zellij|doom-emacs|atuin|ssh|karabiner|nix) ;;
+        dot|zsh|zellij|doom|atuin|ssh|karabiner|nix) ;;
         *)
             usage
             exit 1
@@ -483,14 +492,8 @@ main() {
     # managers or shell-level helpers. nix is exempt because `dot setup nix`
     # is itself the installer for the Nix package manager.
     case "${app}" in
-        dot|doom-emacs|nix) ;;
+        dot|doom|nix) ;;
         *) check_if_installed_and_exit "${app}" ;;
-    esac
-
-    # the dispatch function replaces the app's dashes with underscores:
-    # `setup doom-emacs` calls `setup_doom`
-    case "${app}" in
-        doom-emacs) app="doom" ;;
     esac
 
     "${action}_${app}"

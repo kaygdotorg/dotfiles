@@ -38,7 +38,7 @@ Then set up whichever apps you need:
 dot setup nix          # installs the Nix package manager + wires Home Manager
 dot setup zsh
 dot setup zellij
-dot setup doom-emacs
+dot setup doom
 dot setup atuin
 dot setup ssh
 dot setup karabiner    # macOS only, requires npm
@@ -61,7 +61,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI accepts exactly two arguments:
 
 ```bash
-dot <setup|update> <dot|zsh|zellij|doom-emacs|atuin|ssh|karabiner|nix>
+dot <setup|update> <dot|zsh|zellij|doom|atuin|ssh|karabiner|nix>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -71,7 +71,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - `dot setup zsh` reuses the existing install directory and skips plugin repos that are already present.
 - `dot setup zellij` links the tracked `config.kdl` and `kayg.kdl`, then downloads only the exact hash-pinned Zellij plugins listed in `zellij/plugins.lock`. A checksum mismatch aborts rather than installing unverified bytes.
 - `dot update zellij` never fetches a moving "latest" release. To upgrade a plugin, update its entry in `zellij/plugins.lock` (version, URL, sha256) after review, then rerun setup on each machine.
-- `dot setup doom-emacs` clones this repo's Doom config into `~/.config/doom` (Doom's standard location) and requires Emacs to already be installed. Use `doom doctor` to verify the environment and `dot update doom-emacs` to pull plus `doom sync`.
+- `dot setup doom` clones this repo's Doom config into `~/.config/doom` (Doom's standard location) and requires Emacs to already be installed. Use `doom doctor` to verify the environment and `dot update doom` to pull plus `doom sync`.
 - `dot setup atuin` links an existing Atuin install into `~/.local/bin` and refreshes its config; the binary itself comes from Home Manager/Nix.
 - `dot setup dot`, `dot setup ssh`, and `dot setup karabiner` are symlink/generation-based and can be run repeatedly.
 - `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten.

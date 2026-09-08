@@ -30,9 +30,8 @@ jobs:
 
       - name: Check every dispatchable app has both actions
         # `dot <action> <app>` dispatches to "${action}_${app}" — a missing
-        # function is only discovered at runtime, as exit 127. `doom-emacs`
-        # maps to setup_doom/update_doom (shell function names cannot carry
-        # dashes), so it is checked under its function spelling. setup_nix and
+        # function is only discovered at runtime, as exit 127. The app slug is
+        # `doom`, dispatching to setup_doom/update_doom. setup_nix and
         # update_nix live in scripts/lib/nix.sh, which is sourced by dot.
         run: |
           status=0
