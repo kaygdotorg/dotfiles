@@ -1,8 +1,13 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, homeDir, ... }:
 
+let
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+in
 {
+  # username is uniform; homeDirectory differs per platform and is supplied
+  # per-configuration as a module arg (homeDir) from flake.nix extraArgs.
   home.username = "kayg";
-  home.homeDirectory = "/Users/kayg";
+  home.homeDirectory = homeDir;
 
   # Packages for BOTH macOS and Linux hosts.
   home.packages = with pkgs;
@@ -41,19 +46,18 @@
       # (pkgs.ghostty-bin) — pkgs.ghostty refuses to evaluate on darwin
       # (meta.platforms = linux only).
     ]
-    ++ [ (if pkgs.stdenv.hostPlatform.isDarwin
-          then pkgs.ghostty-bin.terminfo
-          else pkgs.ghostty.terminfo) ]
-    # console-only emacs: full GUI build is redundant on macOS too, the
-    # terminal is the interface (user preference, 2026-09).
-    ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-      emacs-nox
-    ];
+    ++ [ (if isDarwin then pkgs.ghostty-bin.terminfo else pkgs.ghostty.terminfo) ]
+    # console-only emacs on every platform: the terminal is the interface.
+    # emacs-nox exists on both linux and darwin in nixpkgs-unstable.
+    ++ [ pkgs.emacs-nox ]
+    # oh-my-pi (binary: omp) — terminal coding agent from numtide's
+    # llm-agents.nix, exposed as `omp` by the per-platform overlays.
+    ++ [ pkgs.omp ];
 
   # OmniWM tiling window manager — macOS only (headless Linux hosts skip it).
   programs.omniwm = {
-    enable = pkgs.stdenv.hostPlatform.isDarwin;
-    launchd.enable = pkgs.stdenv.hostPlatform.isDarwin;
+    enable = isDarwin;
+    launchd.enable = isDarwin;
     launchd.keepAlive = false;
   };
 
