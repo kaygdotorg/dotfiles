@@ -300,14 +300,29 @@ update_atuin() {
 }
 
 # doom
-# Cloning: doom-emacs/ → ~/.config/doom    (Doom's standard config dir)
-#          ~/.config/emacs is created by `doom install` as its runtime tree.
+# Framework: ~/.config/emacs  (cloned from doomemacs/doomemacs, upstream default)
+# DOOMDIR:   ~/.config/doom   (user config; `doom install` deploys the default
+#            set there on first run)
 #
-# Emacs and the `doom` CLI are user packages owned by Home Manager/Nix. The
-# config itself lives in this repository. First run after linking:
-#   doom doctor   (verify environment)
-doom_src="${repo_path}/doom-emacs"
+# Emacs is a user package owned by Home Manager/Nix. The Doom CLI lives in the
+# framework tree (~/.config/emacs/bin/doom).
+doom_framework="${HOME}/.config/emacs"
 doom_dest="${HOME}/.config/doom"
+
+# Run a long command in a floating zellij pane when possible so the user can
+# keep working. Falls back to running it in the foreground.
+# Args: pane-name, command...
+run_in_floating_pane() {
+    pane_name="${1}"
+    shift
+    if command -v zellij >/dev/null 2>&1 && [ -n "${ZELLIJ_SESSION_NAME:-}" ]; then
+        printf '%s\n' "Launching '${pane_name}' in a floating zellij pane (you can keep working; the pane closes when it finishes)"
+        # shellcheck disable=SC2086  # words are intentionally split
+        zellij action new-pane --floating --close-on-exit --name "${pane_name}" -- "$@"
+        return 0
+    fi
+    return 1
+}
 
 setup_doom() {
     check_if_installed_and_exit emacs
@@ -316,48 +331,54 @@ setup_doom() {
     printf '%s' "Creating ~/.config directory"
     run_cmd mkdir -p "${HOME}/.config"
 
-    if [ -d "${doom_dest}/.git" ]; then
-        printf '%s\n' "Doom config already installed at ${doom_dest}"
+    # 1. the Doom framework (upstream default location: ~/.config/emacs)
+    if [ -d "${doom_framework}/.git" ]; then
+        printf '%s\n' "Doom framework already installed at ${doom_framework}"
+    elif [ -e "${doom_framework}" ]; then
+        printf '%s\n' "Cannot install Doom: ${doom_framework} exists and is not a Doom checkout."
+        exit 1
     else
-        if [ -e "${doom_dest}" ]; then
-            printf '%s\n' "Cannot install Doom config: ${doom_dest} exists and is not a Doom checkout."
-            exit 1
-        fi
-        if [ ! -d "${doom_src}/.git" ] && [ -z "$(ls -A "${doom_src}" 2>/dev/null)" ]; then
-            printf '%s\n' "No Doom config is tracked in this repository yet."
-            printf '%s\n' "Expected a git repo or files under ${doom_src}."
-            exit 1
-        fi
-        printf '%s' "Cloning Doom Emacs configuration into ${doom_dest}"
-        run_cmd git -C "${HOME}/.config" clone "${doom_src}" doom
+        printf '%s' "Cloning the Doom framework into ${doom_framework}"
+        run_cmd git clone --depth 1 https://github.com/doomemacs/doomemacs "${doom_framework}"
     fi
 
-    printf '%s' "Verifying the Doom environment"
-    if command -v doom >/dev/null 2>&1; then
-        run_cmd doom doctor
+    doom_cli="${doom_framework}/bin/doom"
+    if [ ! -x "${doom_cli}" ] && command -v doom >/dev/null 2>&1; then
+        doom_cli="$(command -v doom)"
+    fi
+
+    # 2. install packages + deploy the default config into DOOMDIR
+    if [ -f "${doom_dest}/init.el" ]; then
+        printf '%s\n' "Doom config already deployed at ${doom_dest}"
+    elif [ -n "${ZELLIJ_SESSION_NAME:-}" ] && command -v zellij >/dev/null 2>&1; then
+        printf '%s' "Installing Doom packages (this takes a while)"
+        if run_in_floating_pane "doom install" "${doom_cli}" install; then
+            printf '%s\n' "Run 'doom doctor' from ${doom_cli} once the install finishes."
+            return 0
+        fi
+        # fall through to the foreground path if the pane could not be spawned
+        run_cmd "${doom_cli}" install
     else
-        # intentional single quotes: the backtick is prose, not command
-        # substitution, so shellcheck's SC2016 hint does not apply here.
-        # shellcheck disable=SC2016
-        printf ' skipped (doom CLI not on PATH; run `doom doctor` after installing Emacs)\n'
+        printf '%s' "Installing Doom packages (this takes a while)"
+        run_cmd "${doom_cli}" install
     fi
 }
 
 update_doom() {
-    if [ ! -d "${doom_dest}/.git" ]; then
-        printf '%s\n' "No Doom config checkout at ${doom_dest}; run 'dot setup doom' first."
+    if [ ! -d "${doom_framework}/.git" ]; then
+        printf '%s\n' "No Doom framework at ${doom_framework}; run 'dot setup doom' first."
         exit 1
     fi
-    printf '%s' "Pulling latest Doom configuration"
-    run_cmd git -C "${doom_dest}" pull
+    printf '%s' "Updating the Doom framework"
+    run_cmd git -C "${doom_framework}" pull
 
-    # Re-sync the Doom runtime after config changes. The CLI is provided by
-    # Emacs/Nix; without it, the pull alone is still safe.
-    if command -v doom >/dev/null 2>&1; then
+    # Re-sync the Doom runtime after framework/config changes. Without the CLI
+    # the pull alone is still safe.
+    if [ -x "${doom_framework}/bin/doom" ]; then
         printf '%s' "Rebuilding the Doom runtime"
-        run_cmd doom sync
+        run_cmd "${doom_framework}/bin/doom" sync
     else
-        printf '%s\n' "Skipped 'doom sync' (doom CLI not on PATH)."
+        printf '%s\n' "Skipped 'doom sync' (doom CLI not found)."
     fi
 }
 
