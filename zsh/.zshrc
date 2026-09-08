@@ -48,49 +48,19 @@ if command -v go 2>/dev/null 1>&2; then
 fi
 
 # ============================================================================
-# SAFETY: nested multiplexer check + auto-start (zellij primary, tmux fallback)
+# Interactive login: open the Zellij session manager, then keep zsh alive
 # ============================================================================
-# Why: running a multiplexer inside an existing one produces confusing nested
-# sessions that are hard to exit. This prevents auto-starting either tool when
-# already inside one.
-#
-# The guards, in order:
-#   $- == *i*             interactive only (not scp/rsync/sftp transfers)
-#   -z ${TMUX}/${ZELLIJ}  not already inside tmux or zellij
-#   -z ${DOT_NO_AUTOMUX}  manual escape hatch: `DOT_NO_AUTOMUX=1 ssh host`
-#   -z ${SSH_ORIGINAL_COMMAND}
-#                         a forced command (VS Code Remote, `ssh host cmd`,
-#                         editor and agent remotes) must not be hijacked into
-#                         a session — it will hang or garble its protocol
-#
-# PRIMARY: zellij (vanilla built-in defaults since 2026-09-07). attach --create
-#   reuses or creates; the "work" session name keeps parity with the tmux era.
-#
-# FALLBACK: tmux when zellij is absent. TMUX_CLIENT_NAME attaches a named
-#   client session to the shared "work" session via tmux grouping.
+# `zellij attach` alone only lists active sessions and exits when none exist.
+# A named manager session, created from the built-in session-manager layout,
+# stays available and lists both active and resurrectable sessions. It is
+# deliberately NOT exec'd, so leaving it returns to zsh rather than dropping
+# the NetBird SSH connection.
 # ============================================================================
 if [[ $- == *i* ]] && [[ -t 0 ]] && [[ -t 1 ]] \
     && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
-    && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    if [[ -n "$(command -v zellij)" ]]; then
-        # has-session first: `attach --create` on a freshly-created-then-exited
-        # session (client disconnect before panes spawn — seen over tsshd)
-        # leaves an EXITED session that resurrects empty.
-        if ! zellij list-sessions 2>/dev/null | grep -q "^work "; then
-            exec zellij --session work
-        else
-            exec zellij attach work
-        fi
-    elif [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
-        if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
-            && tmux has-session -t work 2>/dev/null; then
-            exec tmux new-session -A -s "${TMUX_CLIENT_NAME}" -t work
-        elif tmux has-session 2>/dev/null; then
-            exec tmux attach-session
-        else
-            exec tmux new-session -s work
-        fi
-    fi
+    && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]] \
+    && command -v zellij >/dev/null 2>&1; then
+    zellij --layout session-manager attach --create zellij-manager
 fi
 
 # ============================================================================

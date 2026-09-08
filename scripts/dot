@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|atuin|ssh|ghostty|karabiner|nix>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|tmux|zsh|zellij|atuin|ssh|ghostty|karabiner|nix>"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -151,6 +151,26 @@ setup_tmux() {
 
 update_tmux() {
     printf '%s\n' "No framework to update. Use prefix + U to update plugins."
+}
+
+# zellij
+# Linking: zellij/layouts/session-manager.kdl →
+#          ~/.config/zellij/layouts/session-manager.kdl
+zellij_src="${repo_path}/zellij"
+zellij_dest="${HOME}/.config/zellij"
+
+setup_zellij() {
+    printf '%s' "Creating Zellij layout directory"
+    run_cmd mkdir -p "${zellij_dest}/layouts"
+
+    backup_if_real "${zellij_dest}/layouts/session-manager.kdl"
+
+    printf '%s' "Linking Zellij session-manager layout"
+    run_cmd ln -sf "${zellij_src}/layouts/session-manager.kdl" "${zellij_dest}/layouts/session-manager.kdl"
+}
+
+update_zellij() {
+    setup_zellij
 }
 
 # zsh
@@ -454,7 +474,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|tmux|zsh|atuin|ssh|ghostty|karabiner|nix) ;;
+        dot|tmux|zsh|zellij|atuin|ssh|ghostty|karabiner|nix) ;;
         *)
             usage
             exit 1
