@@ -15,8 +15,9 @@ layout {
     pane size=1 borderless=true {
         plugin location="file:~/.config/zellij/plugins/zjstatus.wasm" {
             // ------------------------------------------------ left ----
-            // tabs first, each in its own rounded pill
-            format_left "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] {session} #[fg=#fab387,bg=default] {tabs}"
+            // tabs first, each in its own rounded pill; the session pill
+            // prepends user@hostname via zjstatus command_ substitutions
+            format_left "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] {session} #[fg=#fab387,bg=default] {tabs}"
 
             tab_normal "#[fg=#585b70,bg=default]#[bg=#585b70,fg=#9399b2] {index} {name} #[fg=#585b70,bg=default]"
             tab_active "#[fg=#cba6f7,bg=default]#[bg=#cba6f7,fg=#1e1e2e,bold] {index} {name} #[fg=#cba6f7,bg=default]"
@@ -25,8 +26,13 @@ layout {
             // ------------------------------------------------ right ----
             format_right " {mode} "
 
-            // session pill (peach, intentionally distinct from mauve active tabs)
-            format_session "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] ◆ {session_name} #[fg=#fab387,bg=default]"
+            // session pill (peach, intentionally distinct from mauve active tabs).
+            // {session_userhost} is fed by command_userhost below — a cached
+            // `whoami`+hostname read so the pill shows user@host/session.
+            command_userhost_command "printf '%s@%s' \"$USER\" \"$(hostname -s)\""
+            command_userhost_interval "0"
+            command_userhost_rendermode "static"
+            format_session "#[fg=#fab387,bg=default]#[bg=#fab387,fg=#1e1e2e,bold] ◆ {command_userhost}/{session_name} #[fg=#fab387,bg=default]#"
 
             // mode pills
             format_mode "#[fg=#89b4fa,bg=default]#[bg=#89b4fa,fg=#1e1e2e,bold] {mode} #[fg=#89b4fa,bg=default]"
