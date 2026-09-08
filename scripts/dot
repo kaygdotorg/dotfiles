@@ -138,9 +138,11 @@ install_locked_zellij_plugins() {
 
     while IFS='|' read -r filename version url expected_sha; do
         case "${filename}" in ''|\#*) continue ;; esac
-        [ -n "${version}" ] && [ -n "${url}" ] && [ -n "${expected_sha}" ] || {
-            printf '%s\n' "Malformed plugin lock entry for ${filename}"; exit 1;
-        }
+        # an explicit if, so shellcheck's SC2015 A&&B||C hint does not apply
+        if [ -z "${version}" ] || [ -z "${url}" ] || [ -z "${expected_sha}" ]; then
+            printf '%s\n' "Malformed plugin lock entry for ${filename}"
+            exit 1
+        fi
         destination="${plugins_dest}/${filename}"
         if [ -f "${destination}" ] && [ "$(sha256_file "${destination}")" = "${expected_sha}" ]; then
             printf '%s\n' "Pinned ${filename} ${version} already verified"
