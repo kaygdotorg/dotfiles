@@ -55,10 +55,33 @@ fi
 # deliberately NOT exec'd, so leaving it returns to zsh rather than dropping
 # the NetBird SSH connection.
 # ============================================================================
-if [[ $- == *i* ]] && [[ -t 0 ]] && [[ -t 1 ]] \
-    && [[ -z "${TMUX:-}" ]] && [[ -z "${ZELLIJ:-}" ]] \
-    && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]] \
-    && command -v zellij >/dev/null 2>&1; then
+# Each guard logs its verdict to a debug file (bounded, one line per login)
+# so a skipped auto-open can be diagnosed from the client side later. Toggle
+# the whole block off with DOT_NO_AUTOMUX.
+_automux_dbg="${HOME}/.cache/dot-automux-debug.log"
+_automux_why=""
+if [[ $- != *i* ]]; then
+    _automux_why="non-interactive"
+elif [[ ! -t 0 ]]; then
+    _automux_why="stdin-not-tty"
+elif [[ ! -t 1 ]]; then
+    _automux_why="stdout-not-tty"
+elif [[ -n "${TMUX:-}" ]]; then
+    _automux_why="inside-tmux"
+elif [[ -n "${ZELLIJ:-}" ]]; then
+    _automux_why="inside-zellij"
+elif [[ -n "${DOT_NO_AUTOMUX:-}" ]]; then
+    _automux_why="DOT_NO_AUTOMUX-set"
+elif [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
+    _automux_why="SSH_ORIGINAL_COMMAND-set"
+elif ! command -v zellij >/dev/null 2>&1; then
+    _automux_why="zellij-not-on-PATH"
+fi
+if [[ -n "${_automux_why}" ]]; then
+    [[ -d "${HOME}/.cache" ]] && print -r -- "$(date '+%F %T') skip: ${_automux_why} (tty0:$([[ -t 0 ]] && echo y || echo n) tty1:$([[ -t 1 ]] && echo y || echo n) sso:${SSH_ORIGINAL_COMMAND:-none})" >> "${_automux_dbg}" 2>/dev/null
+    unset _automux_dbg _automux_why
+else
+    unset _automux_dbg _automux_why
     zellij --new-session-with-layout welcome
 fi
 
