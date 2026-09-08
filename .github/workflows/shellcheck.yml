@@ -32,12 +32,13 @@ jobs:
         # `dot <action> <app>` dispatches to "${action}_${app}" — a missing
         # function is only discovered at runtime, as exit 127. `doom-emacs`
         # maps to setup_doom/update_doom (shell function names cannot carry
-        # dashes), so it is checked under its function spelling.
+        # dashes), so it is checked under its function spelling. setup_nix and
+        # update_nix live in scripts/lib/nix.sh, which is sourced by dot.
         run: |
           status=0
           for app in dot zsh zellij doom atuin ssh karabiner nix; do
             for action in setup update; do
-              if ! grep -q "^${action}_${app}()"; then
+              if ! grep -q "^${action}_${app}()" scripts/dot scripts/lib/nix.sh; then
                 echo "missing function: ${action}_${app}()"
                 status=1
               fi
