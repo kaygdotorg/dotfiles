@@ -1,4 +1,4 @@
-{ config, lib, pkgs, homeDir, ... }:
+{ config, lib, pkgs, homeDir, withOmp ? true, ... }:
 
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
@@ -50,9 +50,11 @@ in
     # console-only emacs on every platform: the terminal is the interface.
     # emacs-nox exists on both linux and darwin in nixpkgs-unstable.
     ++ [ pkgs.emacs-nox ]
-    # oh-my-pi (binary: omp) — terminal coding agent from numtide's
-    # llm-agents.nix, exposed as `omp` by the per-platform overlays.
-    ++ [ pkgs.omp ];
+    # oh-my-pi (source-built: rust + bun compile, several minutes). Included
+    # only when the host passes withOmp = true (mbp machines; cached there).
+    # mba opts out until its binary-cache situation changes — see
+    # home-manager/flake.nix.
+    ++ lib.optionals withOmp [ pkgs.omp ];
 
   # OmniWM tiling window manager — macOS only (headless Linux hosts skip it).
   programs.omniwm = {

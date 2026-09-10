@@ -28,7 +28,7 @@
       # extraSpecialArgs (the homeManagerConfiguration arg name).
       kayg = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.aarch64-darwin;
-        extraSpecialArgs = { homeDir = "/Users/kayg"; };
+        extraSpecialArgs = { homeDir = "/Users/kayg"; withOmp = true; };
         modules = [
           ./home.nix
           {
@@ -49,7 +49,7 @@
       # Linux — x86_64 (agents VMs)
       kayg-linux = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.x86_64-linux;
-        extraSpecialArgs = { homeDir = "/home/kayg"; };
+        extraSpecialArgs = { homeDir = "/home/kayg"; withOmp = false; };
         modules = [
           ./home.nix
           {
@@ -65,7 +65,7 @@
       # Linux — aarch64 (o2-style arm hosts)
       kayg-linux-arm = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.aarch64-linux;
-        extraSpecialArgs = { homeDir = "/home/kayg"; };
+        extraSpecialArgs = { homeDir = "/home/kayg"; withOmp = false; };
         modules = [
           ./home.nix
           {
