@@ -26,6 +26,8 @@
     homeConfigurations = {
       # macOS — Apple Silicon. homeDir reaches home.nix through
       # extraSpecialArgs (the homeManagerConfiguration arg name).
+      # mbp runs the daily launchd HM switch with this entry; omp is cached
+      # here so switches stay fetch-only.
       kayg = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.aarch64-darwin;
         extraSpecialArgs = { homeDir = "/Users/kayg"; withOmp = true; };
@@ -43,6 +45,26 @@
           # ships upstream modules/programs/omniwm.nix with the same option
           # shape (enable/package/launchd.keepAlive), so importing ours
           # collides with a duplicate-option assertion.
+        ];
+      };
+
+      # macOS — Apple Silicon, mba host. Same user/dir as `kayg` but omp is
+      # excluded: this host has no binary-cache coverage for it, and omp is
+      # a from-source build (rust + bun) that must never run unattended.
+      # Switch with: nix run home-manager/master -- switch --flake .#kayg-mba
+      kayg-mba = home-manager.lib.homeManagerConfiguration {
+        pkgs = nixpkgs.legacyPackages.aarch64-darwin;
+        extraSpecialArgs = { homeDir = "/Users/kayg"; withOmp = false; };
+        modules = [
+          ./home.nix
+          {
+            nixpkgs.overlays = [
+              (final: prev: {
+                omniwm = final.callPackage ./omniwm/package.nix { };
+                omp = llm-agents.packages.${prev.stdenv.hostPlatform.system}.omp;
+              })
+            ];
+          }
         ];
       };
 
