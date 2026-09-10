@@ -236,6 +236,9 @@ wizard_macos_flake() {
     if [ "${hm_entry}" = "kayg" ]; then
         run_cmd ln -sf "${plist_src}" "${plist_dst}"
     else
+        # the dst may still be the old symlink to the tracked plist; replace
+        # it with a real file so the entry substitution is host-local.
+        [ -L "${plist_dst}" ] && rm -f "${plist_dst}"
         run_cmd cp "${plist_src}" "${plist_dst}"
         run_cmd sed -i '' "s|--flake \.|--flake .#${hm_entry}|" "${plist_dst}"
     fi
