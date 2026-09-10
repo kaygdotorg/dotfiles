@@ -239,7 +239,9 @@ wizard_macos_flake() {
         run_cmd cp "${plist_src}" "${plist_dst}"
         run_cmd sed -i '' "s|--flake \.|--flake .#${hm_entry}|" "${plist_dst}"
     fi
-    run_cmd launchctl bootout "gui/$(id -u)/${plist_id}" 2>/dev/null || true
+    # bootout fails legitimately when the agent isn't loaded yet — that is
+    # not an error. Use plain commands (not run_cmd) for that step.
+    launchctl bootout "gui/$(id -u)/${plist_id}" 2>/dev/null || true
     run_cmd launchctl bootstrap "gui/$(id -u)" "${plist_dst}"
     run_cmd launchctl enable "gui/$(id -u)/${plist_id}"
 
