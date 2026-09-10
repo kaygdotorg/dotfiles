@@ -220,12 +220,25 @@ wizard_macos_flake() {
         printf '%s\n' "flake OK"
     fi
 
-    # launchd daily update (the macOS equivalent of the Linux systemd timer):
-    # re-pin unstable, flake update, home-manager switch, GC old generations.
-    printf '%s' "Installing the daily auto-update LaunchAgent"
+    # Per-host home-manager entry: mbp uses the shared `kayg` (omp cached),
+    # mba uses `kayg-mba` (omp excluded — from-source build, no cache
+    # coverage there; see home-manager/flake.nix). The tracked plist is the
+    # mbp default; for other hosts the installed copy gets the entry
+    # substituted in at install time.
+    local hm_entry="kayg"
+    case "$(hostname -s)" in
+        mba) hm_entry="kayg-mba" ;;
+    esac
+
+    printf '%s' "Installing the daily auto-update LaunchAgent (entry: ${hm_entry})"
     run_cmd mkdir -p "${agents_dir}"
     backup_if_real "${plist_dst}"
-    run_cmd ln -sf "${plist_src}" "${plist_dst}"
+    if [ "${hm_entry}" = "kayg" ]; then
+        run_cmd ln -sf "${plist_src}" "${plist_dst}"
+    else
+        run_cmd cp "${plist_src}" "${plist_dst}"
+        run_cmd sed -i '' "s|--flake \.|--flake .#${hm_entry}|" "${plist_dst}"
+    fi
     run_cmd launchctl bootout "gui/$(id -u)/${plist_id}" 2>/dev/null || true
     run_cmd launchctl bootstrap "gui/$(id -u)" "${plist_dst}"
     run_cmd launchctl enable "gui/$(id -u)/${plist_id}"
@@ -238,7 +251,7 @@ wizard_macos_flake() {
     printf '%s\n' "  home-manager generations   (then switch to a prior generation)"
     printf '%s\n' ""
     if ask_yes_no "Run the home-manager switch now?" "n"; then
-        run_cmd nix run home-manager/master -- switch --flake "${flake_dir}"
+        run_cmd nix run home-manager/master -- switch --flake "${flake_dir}#${hm_entry}"
         printf '%s\n' "home-manager switch complete."
     else
         printf '%s\n' "Skipping the switch (run the command above when ready)."
