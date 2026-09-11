@@ -17,9 +17,18 @@
       url = "github:numtide/llm-agents.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Apple's official font DMGs (SF Pro/Mono/Compact/…, NY). Used on the
+    # darwin hosts to register all faces for app font pickers; the -nerd
+    # variants from this flake are deliberately NOT installed (local patch
+    # pass, see home.nix). Darwin-only: the Apple EULA limits these fonts
+    # to Apple operating systems.
+    apple-fonts = {
+      url = "github:Lyndeno/apple-fonts.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, llm-agents, ... }: {
+  outputs = { self, nixpkgs, home-manager, llm-agents, apple-fonts, ... }: {
     # one entry per host platform; the module set is shared. homeDir is
     # injected so home.nix can set home.homeDirectory per platform without
     # duplicating the package list.
@@ -30,7 +39,11 @@
       # here so switches stay fetch-only.
       kayg = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.aarch64-darwin;
-        extraSpecialArgs = { homeDir = "/Users/kayg"; withOmp = true; };
+        extraSpecialArgs = {
+          homeDir = "/Users/kayg";
+          withOmp = true;
+          appleFonts = apple-fonts.packages.aarch64-darwin;
+        };
         modules = [
           ./home.nix
           {
@@ -54,7 +67,11 @@
       # Switch with: nix run home-manager/master -- switch --flake .#kayg-mba
       kayg-mba = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.aarch64-darwin;
-        extraSpecialArgs = { homeDir = "/Users/kayg"; withOmp = false; };
+        extraSpecialArgs = {
+          homeDir = "/Users/kayg";
+          withOmp = false;
+          appleFonts = apple-fonts.packages.aarch64-darwin;
+        };
         modules = [
           ./home.nix
           {

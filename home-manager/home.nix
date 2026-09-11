@@ -1,4 +1,4 @@
-{ config, lib, pkgs, homeDir, withOmp ? true, ... }:
+{ config, lib, pkgs, homeDir, withOmp ? true, appleFonts ? null, ... }:
 
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
@@ -54,7 +54,24 @@ in
     # only when the host passes withOmp = true (mbp machines; cached there).
     # mba opts out until its binary-cache situation changes — see
     # home-manager/flake.nix.
-    ++ lib.optionals withOmp [ pkgs.omp ];
+    ++ lib.optionals withOmp [ pkgs.omp ]
+    # Apple fonts (base set) — darwin only. macOS already ships these
+    # system-wide; installing via nix registers all faces for app font
+    # pickers (rootshell/codex "System Default Font" rendering). The
+    # -nerd variants are deliberately excluded: nerd-font-patcher runs a
+    # local patch pass over every font file (minutes of compute per
+    # family), which violates the no-local-builds rule. Apple EULA limits
+    # these fonts to Apple operating systems, so never install on linux.
+    ++ lib.optionals (isDarwin && appleFonts != null) [
+      appleFonts.sf-pro
+      appleFonts.sf-compact
+      appleFonts.sf-mono
+      appleFonts.sf-arabic
+      appleFonts.sf-armenian
+      appleFonts.sf-georgian
+      appleFonts.sf-hebrew
+      appleFonts.ny
+    ];
 
   # OmniWM tiling window manager — macOS only (headless Linux hosts skip it).
   programs.omniwm = {
