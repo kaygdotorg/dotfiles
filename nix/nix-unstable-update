@@ -1,35 +1,726 @@
 #!/usr/bin/env bash
 #
-# nix-unstable-update — re-pin the user nixpkgs registry to the current
-# nixpkgs-unstable HEAD and upgrade the user nix profile against it.
+# Transactional Home Manager updater.
 #
-# Why: packages installed via `nix profile install nixpkgs#<pkg>` resolve
-# through the *user registry pin* of flake:nixpkgs. That pin is frozen at
-# whatever revision it was first resolved on (a stale-pin lesson: a package
-# pinned Aug 19 missed its Aug 20 upstream release). This keeps the pin rolling
-# so unstable actually means unstable.
-#
-# Rollback: `nix profile history` then `nix profile rollback <generation>`.
-# The registry pin itself is ~/.local/state/nix/registry.json (trivially
-# re-pinnable).
+# Updates happen in a private copy of home-manager. The live checkout is
+# changed only after the candidate has evaluated and activated successfully,
+# and only flake.lock plus the OmniWM package are copied back.
 
 set -euo pipefail
 
-NIX_BIN="$(command -v nix || echo /nix/var/nix/profiles/default/bin/nix)"
+usage() {
+    printf '%s\n' "Usage: $(basename "$0") [--setup|--check]" >&2
+    printf '%s\n' "  --setup  activate the current lock without refreshing inputs" >&2
+    printf '%s\n' "  --check  evaluate and preflight the current lock without activation" >&2
+}
 
-echo "== pinning flake:nixpkgs to nixpkgs-unstable HEAD =="
-"$NIX_BIN" registry pin nixpkgs github:NixOS/nixpkgs/nixpkgs-unstable
+die() {
+    printf 'nix-unstable-update: %s\n' "$*" >&2
+    exit 1
+}
 
-echo "== upgrading user nix profile =="
-"$NIX_BIN" profile upgrade --all
+# Resolve the script itself before deriving the repository path. The updater
+# is normally installed as a symlink in ~/.local/bin, and the repository may
+# live anywhere on disk.
+script_path="$0"
+case "${script_path}" in
+    /*) ;;
+    *) script_path="$(pwd -P)/${script_path}" ;;
+esac
+while [ -L "${script_path}" ]; do
+    link_target="$(readlink "${script_path}")"
+    case "${link_target}" in
+        /*) script_path="${link_target}" ;;
+        *) script_path="$(dirname "${script_path}")/${link_target}" ;;
+    esac
+done
+script_dir="$(CDPATH='' cd -P "$(dirname "${script_path}")" && pwd -P)"
+repo_dir="$(CDPATH='' cd -P "${script_dir}/.." && pwd -P)"
+home_manager_dir="${repo_dir}/home-manager"
+realize_home="${repo_dir}/nix/realize-home"
 
-echo "== installed versions =="
-"$NIX_BIN" profile list --json 2>/dev/null \
-    | python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-for entry in data.get("elements", {}).values():
-    print(" ", entry.get("attrPath") or entry.get("pname", "?"), "->", entry.get("version", "?"))
-' || true
+[ -d "${home_manager_dir}" ] || die "home-manager directory not found at ${home_manager_dir}"
+[ -x "${realize_home}" ] || die "missing executable helper: ${realize_home}"
 
-echo "== done =="
+mode=update
+case "${1-}" in
+    '') ;;
+    --setup) mode=setup ;;
+    --check) mode=check ;;
+    --help|-h)
+        usage
+        exit 0
+        ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac
+[ "$#" -le 1 ] || { usage; exit 2; }
+
+if command -v nix >/dev/null 2>&1; then
+    nix_bin="$(command -v nix)"
+elif [ -x /nix/var/nix/profiles/default/bin/nix ]; then
+    nix_bin=/nix/var/nix/profiles/default/bin/nix
+else
+    die "nix was not found on PATH or at /nix/var/nix/profiles/default/bin/nix"
+fi
+
+# Keep the caller's settings while making the no-IFD policy process-local.
+# This is inherited by nix-update's own nix-instantiate/nix-build children.
+if [ -n "${NIX_CONFIG-}" ]; then
+    NIX_CONFIG="${NIX_CONFIG}"$'\n''allow-import-from-derivation = false'
+else
+    NIX_CONFIG='allow-import-from-derivation = false'
+fi
+export NIX_CONFIG
+
+# Nix 2.35 supplies the flake/path behavior this transaction relies on. The
+# Determinate build prints both its product version and the underlying Nix
+# version (for example, "nix (Determinate Nix 3.22.1) 2.35.2"); retain the
+# trailing Nix version rather than accidentally checking Determinate's 3.x.
+if ! nix_version_line="$("${nix_bin}" --version 2>/dev/null)"; then
+    die "could not determine the Nix version"
+fi
+nix_version="$(printf '%s\n' "${nix_version_line}" | awk '
+    {
+        for (i = 1; i <= NF; i++) {
+            token = $i
+            sub(/^[^0-9]*/, "", token)
+            sub(/[^0-9.].*$/, "", token)
+            if (token ~ /^[0-9][0-9]*\.[0-9][0-9]*(\.[0-9][0-9]*)?$/) {
+                version = token
+            }
+        }
+    }
+    END { print version }
+')"
+case "${nix_version}" in
+    ''|*[!0-9.]*|.*|*.) die "could not parse the Nix version: ${nix_version_line}" ;;
+esac
+nix_major="${nix_version%%.*}"
+nix_minor_part="${nix_version#*.}"
+nix_minor="${nix_minor_part%%.*}"
+case "${nix_major}:${nix_minor}" in
+    *[!0-9:]*|*:) die "could not parse the Nix version: ${nix_version_line}" ;;
+esac
+if [ "${nix_major}" -lt 2 ] \
+    || { [ "${nix_major}" -eq 2 ] && [ "${nix_minor}" -lt 35 ]; }; then
+    die "Nix ${nix_version} is too old; Nix >= 2.35 is required"
+fi
+
+host_os="$(uname -s)"
+host_arch="$(uname -m)"
+short_hostname="$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)"
+short_hostname="${short_hostname%%.*}"
+case "${host_os}:${host_arch}" in
+    Darwin:arm64|Darwin:aarch64)
+        if [ "${short_hostname}" = mba ]; then
+            host_name=kayg-mba
+        else
+            host_name=kayg
+        fi
+        ;;
+    Linux:x86_64|Linux:amd64)
+        host_name=kayg-linux
+        ;;
+    Linux:aarch64|Linux:arm64)
+        host_name=kayg-linux-arm
+        ;;
+    *)
+        die "unsupported host platform ${host_os}/${host_arch}"
+        ;;
+esac
+
+# Capture a process start identity and boot/session identity for safe stale
+# owner recovery. Supported macOS and Linux hosts expose both through ps plus
+# sysctl or /proc. If either is unavailable, refusing to reap is safer.
+process_start_id() {
+    local process_pid="$1" start_id
+
+    if [ -r "/proc/${process_pid}/stat" ]; then
+        # The comm field may contain spaces or ')' characters. Strip through
+        # its final closing delimiter, then field 20 is procfs field 22.
+        start_id="$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[20] }' \
+            "/proc/${process_pid}/stat" 2>/dev/null || true)"
+    else
+        start_id="$(LC_ALL=C ps -p "${process_pid}" -o lstart= 2>/dev/null \
+            | sed 's/^[[:space:]]*//' || true)"
+    fi
+    [ -n "${start_id}" ] || return 1
+    printf '%s\n' "${start_id}"
+}
+
+boot_identity() {
+    local identity sysctl_bin
+
+    if [ -r /proc/sys/kernel/random/boot_id ]; then
+        identity="$(tr -d '[:space:]' < /proc/sys/kernel/random/boot_id)"
+    elif command -v sysctl >/dev/null 2>&1; then
+        sysctl_bin="$(command -v sysctl)"
+        identity="$("${sysctl_bin}" -n kern.boottime 2>/dev/null \
+            | tr -d '[:space:]{}' || true)"
+    elif [ -x /usr/sbin/sysctl ]; then
+        identity="$(/usr/sbin/sysctl -n kern.boottime 2>/dev/null \
+            | tr -d '[:space:]{}' || true)"
+    else
+        return 1
+    fi
+    [ -n "${identity}" ] || return 1
+    printf '%s\n' "${identity}"
+}
+
+owner_start_id="$(process_start_id "$$" || true)"
+owner_boot_id="$(boot_identity || true)"
+[ -n "${owner_start_id}" ] || die "could not determine this process start identity"
+[ -n "${owner_boot_id}" ] || die "could not determine this boot identity"
+
+xdg_state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
+lock_dir="${xdg_state_home}/dotfiles/nix-unstable-update.lock"
+reaper_dir="${xdg_state_home}/dotfiles/nix-unstable-update.reaper.lock"
+lock_parent="$(dirname "${lock_dir}")"
+lock_held=0
+reaper_held=0
+lock_token="$$.$PPID.$(date +%s).${RANDOM}"
+reaper_token="reaper.$$.$PPID.$(date +%s).${RANDOM}"
+snapshot_root=""
+staged_lock=""
+staged_package=""
+will_commit_lock=0
+will_commit_package=0
+commit_in_progress=0
+commit_finished=0
+
+file_hash() {
+    local file_path="$1"
+
+    if [ ! -e "${file_path}" ]; then
+        printf '%s\n' MISSING
+        return 0
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${file_path}" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "${file_path}" | awk '{print $1}'
+    else
+        die "no SHA-256 utility found (need sha256sum or shasum)"
+    fi
+}
+
+tree_manifest() {
+    local manifest_dir="$1" manifest_path="$2" manifest_paths file_path relative_path executable
+
+    manifest_paths="${manifest_path}.paths"
+    : > "${manifest_path}"
+    find "${manifest_dir}" \( -type f -o -type l \) -print \
+        | LC_ALL=C sort > "${manifest_paths}"
+    while IFS= read -r file_path; do
+        relative_path="${file_path#"${manifest_dir}"/}"
+        if [ -L "${file_path}" ]; then
+            printf 'l\t%s\t%s\n' "$(readlink "${file_path}")" "${relative_path}" >> "${manifest_path}"
+        else
+            executable=0
+            if [ -x "${file_path}" ]; then
+                executable=1
+            fi
+            printf 'f\t%s\t%s\t%s\n' "${executable}" "$(file_hash "${file_path}")" "${relative_path}" >> "${manifest_path}"
+        fi
+    done < "${manifest_paths}"
+    rm -f "${manifest_paths}"
+}
+
+read_owner_record() {
+    local owner_record_path="$1" record_key record_value
+
+    owner_record_pid=""
+    owner_record_start=""
+    owner_record_boot=""
+    owner_record_token=""
+    [ -f "${owner_record_path}" ] || return 1
+    while IFS='=' read -r record_key record_value; do
+        case "${record_key}" in
+            pid) owner_record_pid="${record_value}" ;;
+            start) owner_record_start="${record_value}" ;;
+            boot) owner_record_boot="${record_value}" ;;
+            token) owner_record_token="${record_value}" ;;
+        esac
+    done < "${owner_record_path}"
+    case "${owner_record_pid}" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ -n "${owner_record_start}" ] || return 1
+    [ -n "${owner_record_boot}" ] || return 1
+    [ -n "${owner_record_token}" ] || return 1
+}
+
+# Return 0 for the same live process, 1 when the recorded process is provably
+# gone or its identity differs, and 2 when the evidence is inconclusive.
+owner_identity_state() {
+    local expected_pid="$1" expected_start="$2" expected_boot="$3"
+    local current_boot current_pid current_start
+
+    current_boot="$(boot_identity || true)"
+    if [ -n "${current_boot}" ] && [ "${current_boot}" != "${expected_boot}" ]; then
+        return 1
+    fi
+    current_pid="$(ps -p "${expected_pid}" -o pid= 2>/dev/null \
+        | tr -d '[:space:]' || true)"
+    [ -n "${current_pid}" ] || return 1
+    current_start="$(process_start_id "${expected_pid}" || true)"
+    [ -n "${current_start}" ] || return 2
+    [ "${current_start}" = "${expected_start}" ] || return 1
+    return 0
+}
+
+write_owner_record() {
+    local target_dir="$1" target_token="$2" owner_tmp
+
+    owner_tmp="${target_dir}/owner.tmp.$$.${RANDOM}"
+    {
+        printf 'pid=%s\n' "$$"
+        printf 'start=%s\n' "${owner_start_id}"
+        printf 'boot=%s\n' "${owner_boot_id}"
+        printf 'token=%s\n' "${target_token}"
+    } > "${owner_tmp}"
+    mv -f "${owner_tmp}" "${target_dir}/owner"
+}
+
+# Reclaim only a lock with a valid owner whose process identity is stale. The
+# owner file is moved out of the directory before rmdir so unexpected entries
+# make the operation fail closed and can be restored.
+reclaim_stale_dir() {
+    local target_dir="$1" stale_pid stale_start stale_boot stale_token
+    local reclaim_owner reclaim_status
+
+    [ -d "${target_dir}" ] || return 0
+    if ! read_owner_record "${target_dir}/owner"; then
+        return 2
+    fi
+    stale_pid="${owner_record_pid}"
+    stale_start="${owner_record_start}"
+    stale_boot="${owner_record_boot}"
+    stale_token="${owner_record_token}"
+
+    reclaim_status=0
+    owner_identity_state "${stale_pid}" "${stale_start}" "${stale_boot}" || reclaim_status=$?
+    case "${reclaim_status}" in
+        0) return 1 ;;
+        1) ;;
+        *) return 2 ;;
+    esac
+
+    # Re-read the owner after the identity check so a newly acquired lock is
+    # never deleted using an earlier stale observation.
+    if ! read_owner_record "${target_dir}/owner"; then
+        return 2
+    fi
+    if [ "${owner_record_pid}" != "${stale_pid}" ] \
+        || [ "${owner_record_start}" != "${stale_start}" ] \
+        || [ "${owner_record_boot}" != "${stale_boot}" ] \
+        || [ "${owner_record_token}" != "${stale_token}" ]; then
+        return 2
+    fi
+    # Keep the temporary owner outside the directory: rmdir must be able to
+    # prove that no unexpected files remain before removing the lock.
+    reclaim_owner="${target_dir}.owner.reclaim.$$.${RANDOM}"
+    if ! mv -f "${target_dir}/owner" "${reclaim_owner}" 2>/dev/null; then
+        return 2
+    fi
+    if rmdir "${target_dir}" 2>/dev/null; then
+        rm -f "${reclaim_owner}" 2>/dev/null || true
+        return 0
+    fi
+    if mv -f "${reclaim_owner}" "${target_dir}/owner" 2>/dev/null; then
+        return 2
+    fi
+    return 2
+}
+
+release_owned_dir() {
+    local target_dir="$1" expected_token="$2"
+
+    [ -d "${target_dir}" ] || return 0
+    if read_owner_record "${target_dir}/owner" \
+        && [ "${owner_record_token}" = "${expected_token}" ]; then
+        rm -f "${target_dir}/owner" 2>/dev/null || true
+        rmdir "${target_dir}" 2>/dev/null || true
+    fi
+}
+
+rollback_target() {
+    local target_path="$1" expected_hash="$2" backup_path="$3" original_state="$4" current_hash
+
+    current_hash="$(file_hash "${target_path}" 2>/dev/null || true)"
+    [ "${current_hash}" = "${expected_hash}" ] || return 0
+    if [ "${original_state}" = MISSING ]; then
+        rm -f "${target_path}" 2>/dev/null || true
+    elif [ -f "${backup_path}" ]; then
+        cp -p "${backup_path}" "${target_path}" 2>/dev/null || true
+    fi
+}
+
+rollback_committed_targets() {
+    if [ "${commit_in_progress}" -ne 1 ] || [ "${commit_finished}" -eq 1 ]; then
+        return 0
+    fi
+    if [ "${will_commit_package}" -eq 1 ]; then
+        rollback_target "${source_package}" "${candidate_package_after}" \
+            "${original_package_backup}" "${source_package_before}"
+    fi
+    if [ "${will_commit_lock}" -eq 1 ]; then
+        rollback_target "${source_lock}" "${candidate_lock_after}" \
+            "${original_lock_backup}" "${source_lock_before}"
+    fi
+}
+
+cleanup() {
+    local cleanup_status=$?
+
+    rollback_committed_targets
+    if [ -n "${staged_lock}" ] && [ -e "${staged_lock}" ]; then
+        rm -f "${staged_lock}" 2>/dev/null || true
+    fi
+    if [ -n "${staged_package}" ] && [ -e "${staged_package}" ]; then
+        rm -f "${staged_package}" 2>/dev/null || true
+    fi
+    if [ -n "${snapshot_root}" ] && [ -d "${snapshot_root}" ]; then
+        rm -rf "${snapshot_root}" 2>/dev/null || true
+    fi
+    if [ "${reaper_held}" -eq 1 ]; then
+        release_owned_dir "${reaper_dir}" "${reaper_token}"
+    fi
+    if [ "${lock_held}" -eq 1 ]; then
+        release_owned_dir "${lock_dir}" "${lock_token}"
+    fi
+    return "${cleanup_status}"
+}
+
+acquire_reaper_lock() {
+    local reaper_status
+
+    if mkdir "${reaper_dir}" 2>/dev/null; then
+        reaper_held=1
+        write_owner_record "${reaper_dir}" "${reaper_token}"
+        return 0
+    fi
+
+    reaper_status=0
+    reclaim_stale_dir "${reaper_dir}" || reaper_status=$?
+    case "${reaper_status}" in
+        0) ;;
+        1) die "stale-lock reaper is already running; refusing concurrent recovery" ;;
+        *) die "stale-lock reaper ownership is ambiguous; refusing recovery" ;;
+    esac
+    if ! mkdir "${reaper_dir}" 2>/dev/null; then
+        die "could not serialize stale-lock recovery"
+    fi
+    reaper_held=1
+    write_owner_record "${reaper_dir}" "${reaper_token}"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+mkdir -p "${lock_parent}"
+if mkdir "${lock_dir}" 2>/dev/null; then
+    lock_held=1
+    write_owner_record "${lock_dir}" "${lock_token}"
+else
+    acquire_reaper_lock
+    reclaim_status=0
+    reclaim_stale_dir "${lock_dir}" || reclaim_status=$?
+    case "${reclaim_status}" in
+        0) ;;
+        1)
+            if read_owner_record "${lock_dir}/owner"; then
+                printf '%s\n' "nix-unstable-update: another run owns ${lock_dir} (pid ${owner_record_pid}); refusing to remove it" >&2
+            else
+                printf '%s\n' "nix-unstable-update: another run owns ${lock_dir}; refusing to remove it" >&2
+            fi
+            exit 75
+            ;;
+        *)
+            printf '%s\n' "nix-unstable-update: lock ownership is ambiguous; refusing to remove ${lock_dir}" >&2
+            exit 75
+            ;;
+    esac
+    release_owned_dir "${reaper_dir}" "${reaper_token}"
+    reaper_held=0
+    if ! mkdir "${lock_dir}" 2>/dev/null; then
+        printf '%s\n' "nix-unstable-update: another run acquired ${lock_dir}; refusing overlap" >&2
+        exit 75
+    fi
+    lock_held=1
+    write_owner_record "${lock_dir}" "${lock_token}"
+fi
+
+# Expose the real checkout to Home Manager activation. Candidate paths must
+# not leak into launchd/systemd or other generated configuration.
+export DOTFILES_REPO="${repo_dir}"
+
+source_lock="${home_manager_dir}/flake.lock"
+source_package="${home_manager_dir}/omniwm/package.nix"
+source_lock_before="$(file_hash "${source_lock}")"
+source_package_before="$(file_hash "${source_package}")"
+
+snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/nix-unstable-update.XXXXXX")"
+source_manifest="${snapshot_root}/source.manifest"
+candidate_manifest="${snapshot_root}/candidate.manifest"
+tree_manifest "${home_manager_dir}" "${source_manifest}"
+candidate_dir="${snapshot_root}/home-manager"
+cp -R "${home_manager_dir}" "${candidate_dir}"
+[ -d "${candidate_dir}" ] || die "could not create Home Manager candidate"
+[ -f "${candidate_dir}/flake.nix" ] || die "candidate is missing flake.nix"
+
+candidate_lock="${candidate_dir}/flake.lock"
+candidate_package="${candidate_dir}/omniwm/package.nix"
+candidate_lock_initial="$(file_hash "${candidate_lock}")"
+candidate_package_initial="$(file_hash "${candidate_package}")"
+tree_manifest "${candidate_dir}" "${candidate_manifest}"
+
+# Check both sides of the copy. This catches edits racing with cp as well as
+# edits that happened after the initial hashes were captured.
+source_lock_now="$(file_hash "${source_lock}")"
+source_package_now="$(file_hash "${source_package}")"
+if [ "${source_lock_now}" != "${source_lock_before}" ] \
+    || [ "${source_package_now}" != "${source_package_before}" ] \
+    || [ "${candidate_lock_initial}" != "${source_lock_before}" ] \
+    || [ "${candidate_package_initial}" != "${source_package_before}" ] \
+    || ! cmp -s "${source_manifest}" "${candidate_manifest}"; then
+    die "Home Manager source changed while creating the candidate"
+fi
+
+# The helper may spend a long time realizing the candidate before it activates
+# it. Give it a private guard to run at the last possible pre-activation point,
+# using the same metadata-aware manifest as this transaction.
+source_guard="${snapshot_root}/before-activate"
+{
+    printf '%s\n' '#!/usr/bin/env bash'
+    printf '%s\n' 'set -euo pipefail'
+    printf 'guard_source_dir=%q\n' "${home_manager_dir}"
+    printf 'guard_expected_manifest=%q\n' "${source_manifest}"
+    cat <<'EOF'
+
+guard_file_hash() {
+    guard_file_path="$1"
+    if [ ! -e "${guard_file_path}" ]; then
+        printf '%s\n' MISSING
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${guard_file_path}" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "${guard_file_path}" | awk '{print $1}'
+    else
+        printf '%s\n' 'before-activate: no SHA-256 utility found' >&2
+        exit 1
+    fi
+}
+
+guard_tree_manifest() {
+    guard_manifest_path="$1"
+    guard_paths_path="${guard_manifest_path}.paths"
+    : > "${guard_manifest_path}"
+    find "${guard_source_dir}" \( -type f -o -type l \) -print \
+        | LC_ALL=C sort > "${guard_paths_path}"
+    while IFS= read -r guard_file_path; do
+        guard_relative_path="${guard_file_path#"${guard_source_dir}"/}"
+        if [ -L "${guard_file_path}" ]; then
+            printf 'l\t%s\t%s\n' "$(readlink "${guard_file_path}")" "${guard_relative_path}" >> "${guard_manifest_path}"
+        else
+            guard_executable=0
+            if [ -x "${guard_file_path}" ]; then
+                guard_executable=1
+            fi
+            printf 'f\t%s\t%s\t%s\n' "${guard_executable}" "$(guard_file_hash "${guard_file_path}")" "${guard_relative_path}" >> "${guard_manifest_path}"
+        fi
+    done < "${guard_paths_path}"
+    rm -f "${guard_paths_path}"
+}
+
+guard_current_manifest="${guard_expected_manifest}.current.$$"
+guard_tree_manifest "${guard_current_manifest}"
+if ! cmp -s "${guard_expected_manifest}" "${guard_current_manifest}"; then
+    printf '%s\n' 'before-activate: Home Manager source changed' >&2
+    rm -f "${guard_current_manifest}"
+    exit 1
+fi
+rm -f "${guard_current_manifest}"
+EOF
+} > "${source_guard}"
+chmod 700 "${source_guard}"
+
+candidate_ref="path:${candidate_dir}"
+if [ "${mode}" = update ]; then
+    if [ "${host_os}" = Darwin ]; then
+        # Build nix-update from the candidate's locked inputs. In particular,
+        # do not use `nix run nixpkgs#nix-update`, which can resolve a new
+        # registry revision outside this transaction and can build locally.
+        nix_update_out="$(
+            "${nix_bin}" build \
+                --no-link \
+                --print-out-paths \
+                --max-jobs 0 \
+                --option builders '' \
+                --option external-builders '[]' \
+                --option allow-import-from-derivation false \
+                "${candidate_ref}#nix-update"
+        )"
+        case "${nix_update_out}" in
+            *$'\n'*) die "locked nix-update build returned multiple output paths" ;;
+            '') die "locked nix-update build returned no output path" ;;
+        esac
+        nix_update_bin="${nix_update_out%/}/bin/nix-update"
+        [ -x "${nix_update_bin}" ] || die "locked nix-update output has no executable ${nix_update_bin}"
+
+        (
+            cd "${candidate_dir}" || exit 1
+            "${nix_update_bin}" --flake --system aarch64-darwin --use-github-releases omniwm --no-src
+        )
+
+        # nix-update's normal source-hash path invokes nix-build. OmniWM is a
+        # binary fetchurl package, so update its version with the locked tool
+        # and obtain the new flat-file hash with prefetch-file instead. This
+        # keeps the refresh free of source derivation builds.
+        omniwm_url="$("${nix_bin}" eval --option allow-import-from-derivation false --raw "${candidate_ref}#packages.aarch64-darwin.omniwm.src.url")"
+        [ -n "${omniwm_url}" ] || die "could not evaluate the OmniWM source URL"
+        omniwm_prefetch_json="$("${nix_bin}" store prefetch-file --option allow-import-from-derivation false --json --no-pretty "${omniwm_url}")"
+        omniwm_hash="$(printf '%s\n' "${omniwm_prefetch_json}" \
+            | sed -n 's/.*"hash"[[:space:]]*:[[:space:]]*"\([^" ]*\)".*/\1/p')"
+        [ -n "${omniwm_hash}" ] || die "could not read the OmniWM source hash"
+
+        package_hash_line="$(sed -n 's/^[[:space:]]*hash[[:space:]]*=[[:space:]]*"\([^"]*\)"[[:space:]]*;.*/\1/p' "${candidate_package}" | head -1)"
+        [ -n "${package_hash_line}" ] || die "candidate OmniWM package has no literal source hash"
+        package_hash_tmp="$(mktemp "${candidate_package}.hash.XXXXXX")"
+        sed "s|hash[[:space:]]*=[[:space:]]*\"[^\"]*\"[[:space:]]*;|hash = \"${omniwm_hash}\";|" \
+            "${candidate_package}" > "${package_hash_tmp}"
+        mv -f "${package_hash_tmp}" "${candidate_package}"
+    fi
+
+    # Let Nix update the candidate's graph as-is. No nested input is forced
+    # with --override-input, so follows such as Numtide's remain declared by
+    # the flake rather than being rewritten by this updater.
+    "${nix_bin}" flake update --option allow-import-from-derivation false --flake "${candidate_ref}"
+fi
+
+# Recheck the complete live source immediately before realization. Updates can
+# take a long time; activating a candidate made from a source tree that has
+# changed in the meantime would switch the wrong configuration.
+source_manifest_before_activation="${snapshot_root}/source-before-activation.manifest"
+tree_manifest "${home_manager_dir}" "${source_manifest_before_activation}"
+if ! cmp -s "${source_manifest}" "${source_manifest_before_activation}"; then
+    die "Home Manager source changed before realization; candidate was not activated"
+fi
+
+if [ "${mode}" = check ]; then
+    "${realize_home}" --flake "${candidate_ref}" --host "${host_name}" --check
+else
+    "${realize_home}" --flake "${candidate_ref}" --host "${host_name}" \
+        --before-activate "${source_guard}"
+fi
+
+# A concurrent source edit must prevent both committing and claiming a clean
+# activation. Check the source immediately after realization and before any
+# write-back; the initial copy and pre-activation checks protect earlier edges.
+source_lock_after="$(file_hash "${source_lock}")"
+source_package_after="$(file_hash "${source_package}")"
+source_manifest_after="${snapshot_root}/source-after.manifest"
+tree_manifest "${home_manager_dir}" "${source_manifest_after}"
+if [ "${source_lock_after}" != "${source_lock_before}" ] \
+    || [ "${source_package_after}" != "${source_package_before}" ] \
+    || ! cmp -s "${source_manifest}" "${source_manifest_after}"; then
+    die "Home Manager source changed during realization; candidate was not committed"
+fi
+
+if [ "${mode}" != update ]; then
+    printf '%s\n' "nix-unstable-update: ${mode} completed for ${host_name}"
+    exit 0
+fi
+
+# Stage changed files in the private candidate directory. This leaves the
+# live source tree unchanged while the final complete manifest is checked.
+staging_root="${snapshot_root}/staging"
+mkdir -p "${staging_root}"
+stage_file() {
+    local candidate_path="$1" stage_kind="$2" candidate_hash="$3" source_hash="$4" staged_path
+
+    if [ "${candidate_hash}" = "${source_hash}" ]; then
+        return 0
+    fi
+    [ -f "${candidate_path}" ] || die "candidate is missing ${candidate_path}"
+    staged_path="$(mktemp "${staging_root}/${stage_kind}.XXXXXX")"
+    cp -p "${candidate_path}" "${staged_path}"
+    case "${stage_kind}" in
+        lock)
+            staged_lock="${staged_path}"
+            will_commit_lock=1
+            ;;
+        package)
+            staged_package="${staged_path}"
+            will_commit_package=1
+            ;;
+        *) die "internal error: unknown staged file ${stage_kind}" ;;
+    esac
+}
+
+candidate_lock_after="$(file_hash "${candidate_lock}")"
+candidate_package_after="$(file_hash "${candidate_package}")"
+stage_file "${candidate_lock}" lock "${candidate_lock_after}" "${source_lock_before}"
+stage_file "${candidate_package}" package "${candidate_package_after}" "${source_package_before}"
+
+original_lock_backup=""
+original_package_backup=""
+if [ "${will_commit_lock}" -eq 1 ]; then
+    if [ "${source_lock_before}" = MISSING ]; then
+        original_lock_backup=MISSING
+    else
+        original_lock_backup="${snapshot_root}/original-flake.lock"
+        cp -p "${source_lock}" "${original_lock_backup}"
+    fi
+fi
+if [ "${will_commit_package}" -eq 1 ]; then
+    if [ "${source_package_before}" = MISSING ]; then
+        original_package_backup=MISSING
+    else
+        original_package_backup="${snapshot_root}/original-omniwm-package.nix"
+        cp -p "${source_package}" "${original_package_backup}"
+    fi
+fi
+
+# The staging files are outside home-manager, so this is a complete manifest
+# recheck immediately before the first live rename.
+source_manifest_before_commit="${snapshot_root}/source-before-commit.manifest"
+tree_manifest "${home_manager_dir}" "${source_manifest_before_commit}"
+if [ "${source_lock_before}" != "$(file_hash "${source_lock}")" ] \
+    || [ "${source_package_before}" != "$(file_hash "${source_package}")" ] \
+    || ! cmp -s "${source_manifest}" "${source_manifest_before_commit}"; then
+    die "Home Manager source changed before write-back; candidate was not committed"
+fi
+
+if [ "${will_commit_lock}" -eq 1 ] || [ "${will_commit_package}" -eq 1 ]; then
+    commit_in_progress=1
+fi
+if [ "${will_commit_lock}" -eq 1 ]; then
+    if ! mv -f "${staged_lock}" "${source_lock}"; then
+        die "could not commit ${source_lock}"
+    fi
+    staged_lock=""
+fi
+if [ "${will_commit_package}" -eq 1 ]; then
+    if ! mv -f "${staged_package}" "${source_package}"; then
+        die "could not commit ${source_package}"
+    fi
+    staged_package=""
+fi
+
+# Validate the resulting targets while rollback is still armed. A signal or
+# concurrent edit between the renames cannot leave a half-committed candidate.
+if [ "${will_commit_lock}" -eq 1 ] \
+    && [ "$(file_hash "${source_lock}")" != "${candidate_lock_after}" ]; then
+    die "committed ${source_lock} did not retain the candidate"
+fi
+if [ "${will_commit_package}" -eq 1 ] \
+    && [ "$(file_hash "${source_package}")" != "${candidate_package_after}" ]; then
+    die "committed ${source_package} did not retain the candidate"
+fi
+commit_finished=1
+
+printf '%s\n' "nix-unstable-update: updated ${host_name} successfully"

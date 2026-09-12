@@ -92,8 +92,8 @@ themes {
 // zellij-tabula: auto-rename tabs from the focused pane's working directory
 // (v0.5.0, vendored at ~/.config/zellij/plugins/)
 load_plugins {
-    "file:/home/kayg/.config/zellij/plugins/zellij-tabula.wasm" {
-        home_dir "/home/kayg"
+    "file:@@HOME@@/.config/zellij/plugins/zellij-tabula.wasm" {
+        home_dir "@@HOME@@"
         worktree_name_display "repo_and_worktree"
         worktree_name_preview_length "10"
     }

@@ -1,4 +1,11 @@
+import { execFile as execFileCallback } from 'node:child_process'
+import { promises as fs, type Stats } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
+import { promisify } from 'node:util'
+
 import {
+  complexModifications,
   duoLayer,
   hyperLayer,
   ifVar,
@@ -11,10 +18,191 @@ import {
   toApp,
   withMapper,
   withModifier,
-  writeToProfile,
 } from 'karabiner.ts'
 
-writeToProfile('Default profile', [
+const PROFILE_NAME = 'Default profile'
+
+type JsonObject = Record<string, unknown>
+
+const execFile = promisify(execFileCallback)
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function karabinerConfigPath(): string {
+  return join(homedir(), '.config', 'karabiner', 'karabiner.json')
+}
+
+function errorCode(error: unknown): string | undefined {
+  return isJsonObject(error) && typeof error.code === 'string' ? error.code : undefined
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function missingConfigMessage(configPath: string): string {
+  return `Karabiner configuration was not found at ${configPath}. Open Karabiner-Elements once and create the "${PROFILE_NAME}" profile, then run this command again.`
+}
+
+async function readKarabinerConfig(configPath: string): Promise<{
+  config: JsonObject
+  profile: JsonObject
+  resolvedPath: string
+  originalStat: Stats
+}> {
+  let resolvedPath: string
+
+  try {
+    const linkStat = await fs.lstat(configPath)
+    if (!linkStat.isFile() && !linkStat.isSymbolicLink()) {
+      throw new Error(`The Karabiner configuration path ${configPath} is not a regular file.`)
+    }
+
+    resolvedPath = await fs.realpath(configPath)
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') {
+      throw new Error(missingConfigMessage(configPath))
+    }
+
+    throw new Error(`Unable to resolve the Karabiner configuration at ${configPath}: ${errorMessage(error)}`)
+  }
+
+  let originalStat: Stats
+  let source: string
+
+  try {
+    originalStat = await fs.stat(resolvedPath)
+    if (!originalStat.isFile()) {
+      throw new Error(`The Karabiner configuration path ${configPath} is not a regular file.`)
+    }
+    source = await fs.readFile(resolvedPath, 'utf8')
+  } catch (error) {
+    throw new Error(`Unable to read the Karabiner configuration at ${configPath}: ${errorMessage(error)}`)
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch (error) {
+    throw new Error(`The Karabiner configuration at ${configPath} is not valid JSON: ${errorMessage(error)}`)
+  }
+
+  if (!isJsonObject(parsed) || !Array.isArray(parsed.profiles)) {
+    throw new Error(`The Karabiner configuration at ${configPath} has no profiles array. Open Karabiner-Elements and create the "${PROFILE_NAME}" profile, then run this command again.`)
+  }
+
+  const profile = parsed.profiles.find((candidate): candidate is JsonObject => (
+    isJsonObject(candidate) && candidate.name === PROFILE_NAME
+  ))
+
+  if (!profile) {
+    throw new Error(`Karabiner profile "${PROFILE_NAME}" was not found in ${configPath}. Open Karabiner-Elements, create or rename that profile, then run this command again.`)
+  }
+
+  return { config: parsed, profile, resolvedPath, originalStat }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await fs.lstat(path)
+    return true
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return false
+    throw error
+  }
+}
+
+async function copyPreservingMetadata(source: string, destination: string): Promise<boolean> {
+  if (process.platform === 'darwin') {
+    await execFile('/bin/cp', ['-p', source, destination])
+    return true
+  }
+
+  if (process.platform === 'linux') {
+    await execFile('/bin/cp', ['--preserve=all', source, destination])
+    return true
+  }
+
+  await fs.copyFile(source, destination)
+  return false
+}
+
+async function writeCopiedFile(path: string, content: string, originalMode: number): Promise<void> {
+  try {
+    await fs.writeFile(path, content, 'utf8')
+    return
+  } catch (error) {
+    const code = errorCode(error)
+    if (code !== 'EACCES' && code !== 'EPERM') throw error
+  }
+
+  // A read-only source can still be replaced atomically through its writable
+  // directory. Temporarily grant the owner write access to the copied inode,
+  // then restore the exact mode before the rename.
+  await fs.chmod(path, originalMode | 0o200)
+  try {
+    await fs.writeFile(path, content, 'utf8')
+  } finally {
+    await fs.chmod(path, originalMode)
+  }
+}
+
+async function nextBackupPath(configPath: string): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
+  const prefix = `${configPath}.bak.${timestamp}`
+  let candidate = prefix
+  let attempt = 0
+
+  while (await pathExists(candidate)) {
+    attempt += 1
+    candidate = `${prefix}.${attempt}`
+  }
+
+  return candidate
+}
+
+async function backupConfig(configPath: string, resolvedPath: string, originalStat: Stats): Promise<string> {
+  const backupPath = await nextBackupPath(configPath)
+  const mode = originalStat.mode & 0o7777
+
+  try {
+    const metadataCopied = await copyPreservingMetadata(resolvedPath, backupPath)
+    if (!metadataCopied) {
+      await fs.chmod(backupPath, mode)
+      await fs.utimes(backupPath, originalStat.atime, originalStat.mtime)
+    }
+  } catch (error) {
+    await fs.rm(backupPath, { force: true })
+    throw new Error(`Unable to back up ${configPath} to ${backupPath}: ${errorMessage(error)}`)
+  }
+
+  return backupPath
+}
+
+async function writeConfigAtomically(resolvedPath: string, content: string, originalStat: Stats): Promise<void> {
+  // Rename the resolved target so a karabiner.json symlink remains intact. The
+  // replacement keeps the original permission bits; its contents and mtime
+  // intentionally change when the generated profile changes.
+  const temporaryDirectory = await fs.mkdtemp(join(dirname(resolvedPath), `.${basename(resolvedPath)}.tmp-`))
+  const temporaryPath = join(temporaryDirectory, basename(resolvedPath))
+  const mode = originalStat.mode & 0o7777
+
+  try {
+    const metadataCopied = await copyPreservingMetadata(resolvedPath, temporaryPath)
+    if (!metadataCopied) {
+      await fs.chmod(temporaryPath, mode)
+      await fs.utimes(temporaryPath, originalStat.atime, originalStat.mtime)
+    }
+    await writeCopiedFile(temporaryPath, content, mode)
+    await fs.rename(temporaryPath, resolvedPath)
+  } finally {
+    await fs.rm(temporaryDirectory, { recursive: true, force: true })
+  }
+}
+
+const profileRules = [
   navigationLayer(),
   selectLayer(),
   numberLayer(),
@@ -25,8 +213,121 @@ writeToProfile('Default profile', [
   windowManagementLayer(),
   essentialModifiers(),
   qwertyToColemakDH(),
-], {
+]
+
+const profileParameters = {
   'duo_layer.threshold_milliseconds': 100,
+}
+
+function generatedOutput() {
+  return complexModifications(profileRules, profileParameters)
+}
+
+function assertToModifierArrays(value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach(assertToModifierArrays)
+    return
+  }
+
+  if (value === null || typeof value !== 'object') return
+
+  const record = value as Record<string, unknown>
+  if ('modifiers' in record && !Array.isArray(record.modifiers)) {
+    throw new Error('Generated Karabiner output contains a non-array modifiers value')
+  }
+
+  Object.entries(record).forEach(([key, child]) => {
+    if (key !== 'modifiers') assertToModifierArrays(child)
+  })
+}
+
+function assertGeneratedToModifierArrays(value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach(assertGeneratedToModifierArrays)
+    return
+  }
+
+  if (value === null || typeof value !== 'object') return
+
+  const eventLists = new Set(['to', 'to_if_alone', 'to_if_held_down', 'to_after_key_up'])
+  Object.entries(value as Record<string, unknown>).forEach(([key, child]) => {
+    if (eventLists.has(key)) {
+      assertToModifierArrays(child)
+    } else {
+      assertGeneratedToModifierArrays(child)
+    }
+  })
+}
+
+function checkGeneratedOutput(): void {
+  const generated = generatedOutput()
+  const serialized = JSON.stringify(generated)
+  assertGeneratedToModifierArrays(JSON.parse(serialized))
+
+  if (generated.rules.length === 0 || generated.rules.some(({ manipulators }) => manipulators.length === 0)) {
+    throw new Error('Generated Karabiner output contains no-op rules')
+  }
+
+  const expectedMappings = [
+    ['y', 'left_arrow', ['left_command', 'left_shift']],
+    ['u', 'down_arrow', ['fn', 'left_shift']],
+    ['i', 'up_arrow', ['fn', 'left_shift']],
+    ['o', 'right_arrow', ['left_command', 'left_shift']],
+  ] as const
+
+  for (const [fromKey, toKey, modifiers] of expectedMappings) {
+    const found = generated.rules.some(({ manipulators }) => manipulators.some((manipulator) => {
+      if (manipulator.type !== 'basic' || !('key_code' in manipulator.from) || manipulator.from.key_code !== fromKey) {
+        return false
+      }
+
+      return (manipulator.to ?? []).some((event) => (
+        'key_code' in event &&
+        event.key_code === toKey &&
+        JSON.stringify(event.modifiers ?? []) === JSON.stringify(modifiers)
+      ))
+    }))
+
+    if (!found) {
+      throw new Error(`Missing generated mapping ${fromKey} -> ${toKey}`)
+    }
+  }
+
+  const manipulatorCount = generated.rules.reduce((count, { manipulators }) => count + manipulators.length, 0)
+  console.info(`✓ In-memory Karabiner output check passed (${generated.rules.length} rules, ${manipulatorCount} manipulators)`)
+}
+
+async function updateProfile(): Promise<void> {
+  const configPath = karabinerConfigPath()
+  const { config, profile, resolvedPath, originalStat } = await readKarabinerConfig(configPath)
+  const generated = generatedOutput()
+
+  if (JSON.stringify(profile.complex_modifications) === JSON.stringify(generated)) {
+    console.info(`✓ Profile ${PROFILE_NAME} is already up to date.`)
+    return
+  }
+
+  profile.complex_modifications = generated
+  const content = `${JSON.stringify(config, null, 2)}\n`
+  const backupPath = await backupConfig(configPath, resolvedPath, originalStat)
+  await writeConfigAtomically(resolvedPath, content, originalStat)
+
+  console.info(`✓ Profile ${PROFILE_NAME} updated.`)
+  console.info(`  Backup: ${backupPath}`)
+}
+
+async function main(): Promise<void> {
+  if (process.argv.includes('--check')) {
+    checkGeneratedOutput()
+    return
+  }
+
+  await updateProfile()
+}
+
+main().catch((error: unknown) => {
+  console.error(`✗ ${errorMessage(error)}`)
+  process.exitCode = 1
 })
 
 /* I am using Colemak-DH MATRIX on MacOS so apart from the navigation layer, everything else might seem odd.
@@ -147,13 +448,13 @@ function selectLayer() {
 
       // -- right half of the keyboard -- //
       // move cursor to the beginning of the line
-      map('y').to('left_arrow', 'left_command'),
+      map('y').to('left_arrow', ['left_command', 'left_shift']),
       // move cursor down by one page
-      map('u').to('down_arrow', 'fn'),
+      map('u').to('down_arrow', ['fn', 'left_shift']),
       // move cursor up by one page
-      map('i').to('up_arrow', 'fn'),
+      map('i').to('up_arrow', ['fn', 'left_shift']),
       // move cursor to the end of the line
-      map('o').to('right_arrow', 'left_command'),
+      map('o').to('right_arrow', ['left_command', 'left_shift']),
 
       // arrow keys, inspired by Max Stoiber and vim
       map('h').to('left_arrow', 'left_shift'),
@@ -165,8 +466,8 @@ function selectLayer() {
       // move left by one word
       map('n').to('left_arrow', ['left_option', 'left_shift']),
       // move to the beginning and end of the document
-      map('m').to('up_arrow', ['left_option', 'left_shift']),
-      map(',').to('down_arrow', ['left_option', 'left_shift']),
+      map('m').to('up_arrow', ['left_command', 'left_shift']),
+      map(',').to('down_arrow', ['left_command', 'left_shift']),
       // move right by one word
       map('.').to('right_arrow', ['left_option', 'left_shift']),
 

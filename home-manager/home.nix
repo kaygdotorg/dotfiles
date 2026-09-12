@@ -1,4 +1,4 @@
-{ config, lib, pkgs, homeDir, withOmp ? true, appleFonts ? null, ... }:
+{ config, lib, pkgs, homeDir, appleFonts ? null, llmPackages, ... }:
 
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
@@ -35,6 +35,20 @@ in
       bun
       python3
       pipx
+      (lib.setPrio 10 coreutils)
+      (lib.setPrio 4 fastfetch)
+      forgejo-cli
+      gitleaks
+      home-assistant-cli
+      mosh
+      rtk
+      rustup
+      spicetify-cli
+      uv
+      wasm-pack
+      wget
+      maple-mono.Normal-NF
+      cascadia-code
 
       # media / misc
       ffmpeg
@@ -50,11 +64,7 @@ in
     # console-only emacs on every platform: the terminal is the interface.
     # emacs-nox exists on both linux and darwin in nixpkgs-unstable.
     ++ [ pkgs.emacs-nox ]
-    # oh-my-pi (source-built: rust + bun compile, several minutes). Included
-    # only when the host passes withOmp = true (mbp machines; cached there).
-    # mba opts out until its binary-cache situation changes — see
-    # home-manager/flake.nix.
-    ++ lib.optionals withOmp [ pkgs.omp ]
+    ++ (with llmPackages; [ codex claude-code antigravity-cli omp cli-proxy-api ])
     # Apple fonts (base set) — darwin only. macOS already ships these
     # system-wide; installing via nix registers all faces for app font
     # pickers (rootshell/codex "System Default Font" rendering). The
@@ -98,7 +108,9 @@ in
   };
   programs.fzf = {
     enable = true;
-    enableZshIntegration = true;
+    # zsh is managed by this repo in `zsh/.zshrc`; disable Home Manager shell
+    # integration to avoid rewriting startup files.
+    enableZshIntegration = false;
   };
 
   # bat as the pager
@@ -106,6 +118,12 @@ in
 
   # eza as ls replacement
   programs.eza.enable = true;
+
+  # Keep using the host's installed Nix; do not install another daemon/client.
+  nix.enable = false;
+  manual.html.enable = false;
+  manual.manpages.enable = false;
+  manual.json.enable = false;
 
   home.stateVersion = "24.11";
 }

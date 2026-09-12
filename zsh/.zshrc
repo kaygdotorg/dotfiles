@@ -5,20 +5,22 @@
 # Base PATH: user local binaries take precedence
 export PATH="${HOME}/.local/bin:${PATH}"
 
-# Package manager PATH - nix first, then brew (only where present)
+# Package manager PATH - nix first, then brew (only where present). Homebrew's
+# shellenv prepends its own bin directories, so load it before putting Nix
+# profiles back at the front.
 case "${OSTYPE}" in
     darwin*)
-        # Nix (per-user) takes precedence, then Homebrew (Apple Silicon or Intel)
-        if [[ -d "${HOME}/.nix-profile/bin" ]]; then
-            export PATH="${HOME}/.nix-profile/bin:${PATH}"
+        if [[ -x "/opt/homebrew/bin/brew" ]]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        elif [[ -x "/usr/local/bin/brew" ]]; then
+            eval "$(/usr/local/bin/brew shellenv)"
         fi
+        # Nix (system-wide and per-user) takes precedence over Homebrew.
         if [[ -d "/nix/var/nix/profiles/default/bin" ]]; then
             export PATH="/nix/var/nix/profiles/default/bin:${PATH}"
         fi
-        if [[ -d "/opt/homebrew/bin" ]]; then
-            eval "$(/opt/homebrew/bin/brew shellenv)"
-        elif [[ -d "/usr/local/bin" ]]; then
-            eval "$(/usr/local/bin/brew shellenv)"
+        if [[ -d "${HOME}/.nix-profile/bin" ]]; then
+            export PATH="${HOME}/.nix-profile/bin:${PATH}"
         fi
         ;;
     *)

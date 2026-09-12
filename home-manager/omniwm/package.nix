@@ -7,14 +7,21 @@
 
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "omniwm";
-  version = "0.6.2";
+  version = "0.6.9";
 
   src = fetchurl {
     url = "https://github.com/BarutSRB/OmniWM/releases/download/v${finalAttrs.version}/OmniWM-v${finalAttrs.version}.zip";
-    hash = "sha256-Iyv5HevupYlGW/EjC5r8ePdu2zg6n6028dB9b57U3rQ=";
+    hash = "sha256-nCSrF04RoeIRVaBkDgMjvqp+IqQC5ZtpaUyEZbACsWU=";
   };
 
   dontUnpack = true;
+
+  # OmniWM is a precompiled, Developer ID signed app bundle. Generic Nix
+  # fixups can rewrite Mach-O files or strip their code, invalidating the
+  # upstream signature and the bundle's sealed resource structure.
+  dontBuild = true;
+  dontFixup = true;
+  dontStrip = true;
 
   strictDeps = true;
 
@@ -31,6 +38,24 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     ln -s $out/Applications/OmniWM.app/Contents/MacOS/omniwmctl $out/bin/omniwmctl
 
     runHook postInstall
+  '';
+
+  doInstallCheck = true;
+
+  # codesign is a host-only Apple tool and is intentionally not a Nix build
+  # input. The Darwin realization helper verifies the signed app with the
+  # host's /usr/bin/codesign before activation; this check covers structure.
+  installCheckPhase = ''
+    runHook preInstallCheck
+
+    test -d "$out/Applications/OmniWM.app"
+    test -d "$out/Applications/OmniWM.app/Contents/MacOS"
+    test -x "$out/Applications/OmniWM.app/Contents/MacOS/OmniWM"
+    test -x "$out/Applications/OmniWM.app/Contents/MacOS/omniwmctl"
+    test -L "$out/bin/OmniWM"
+    test -L "$out/bin/omniwmctl"
+
+    runHook postInstallCheck
   '';
 
   meta = {

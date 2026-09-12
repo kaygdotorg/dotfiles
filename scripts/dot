@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # helper functions from
 # https://gitlab.com/kayg/sh-helpers
@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom|atuin|ssh|karabiner|nix>"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom|atuin|ssh|karabiner|nix> [nix-options]"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -78,17 +78,28 @@ save_log() {
     fi
 }
 
-# backup_if_real(): move a pre-existing regular file or directory out of the
-# way before it is replaced by a symlink. `ln -sf` would overwrite it silently,
-# which on a fresh machine means losing a distro-provided config with no copy.
-# Existing symlinks are left alone — those are ours to replace.
+# backup_if_real(): make a destination safe to replace. Real files and
+# directories are moved aside, while symlinks are removed as links themselves.
+# Removing the link first is important on platforms where `ln -sf` or `mv`
+# follows a symlink to a directory and writes inside an unrelated target.
 #
 # use:
 #   backup_if_real /path/that/is/about/to/become/a/symlink
 backup_if_real() {
-    if [ -e "${1}" ] && [ ! -L "${1}" ]; then
+    if [ -L "${1}" ]; then
+        printf '%s' "Removing existing symlink ${1}"
+        run_cmd rm -f "${1}"
+    elif [ -e "${1}" ]; then
+        local backup_path backup_stamp backup_index
+        backup_stamp="$(date +%Y%m%d%H%M%S)"
+        backup_path="${1}.bak.${backup_stamp}"
+        backup_index=0
+        while [ -e "${backup_path}" ] || [ -L "${backup_path}" ]; do
+            backup_index=$((backup_index + 1))
+            backup_path="${1}.bak.${backup_stamp}.${backup_index}"
+        done
         printf '%s' "Backing up existing ${1}"
-        run_cmd mv "${1}" "${1}.bak.$(date +%Y%m%d%H%M%S)"
+        run_cmd mv "${1}" "${backup_path}"
     fi
 }
 
@@ -110,7 +121,21 @@ setup_dot() {
 
 update_dot() {
     printf '%s' "Updating dotfiles repository"
-    run_cmd git -C "${repo_path}" pull
+    # The daily OmniWM updater may leave a reviewed package pin unstaged.
+    # Let Git stash and reapply local changes around the pull so that generated
+    # pins and ordinary local edits do not block a rebase-based update.
+    run_cmd git -C "${repo_path}" pull --autostash
+
+    # Git can report success after the pull itself when reapplying the
+    # autostash leaves conflicts. Do not claim the update succeeded while the
+    # checkout is unmerged; the autostash remains available for recovery.
+    conflicts="$(git -C "${repo_path}" diff --name-only --diff-filter=U)"
+    if [ -n "${conflicts}" ]; then
+        printf '%s\n' "Git pull completed, but reapplying the autostash left conflicts in:" >&2
+        printf '%s\n' "${conflicts}" >&2
+        printf '%s\n' "Inspect 'git status' and 'git stash list', then resolve the conflicts manually." >&2
+        exit 1
+    fi
 }
 
 # zellij
@@ -125,7 +150,47 @@ zellij_src="${repo_path}/zellij"
 zellij_dest="${HOME}/.config/zellij"
 
 sha256_file() {
-    sha256sum "${1}" | awk '{print $1}'
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${1}" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "${1}" | awk '{print $1}'
+    else
+        printf '%s\n' "Missing checksum command (sha256sum or shasum)."
+        exit 1
+    fi
+}
+
+escape_kdl_string() {
+    local value="${1}"
+
+    # KDL string escaping is separate from sed replacement escaping. Keep the
+    # path valid when HOME contains a backslash, quote, or control character.
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//$'\n'/\\n}"
+    value="${value//$'\r'/\\r}"
+    value="${value//$'\t'/\\t}"
+    value="${value//$'\b'/\\b}"
+    value="${value//$'\f'/\\f}"
+    printf '%s' "${value}"
+}
+
+validate_zellij_config() {
+    local config_path="${1}"
+    local capture
+
+    capture="$(mktemp)"
+    if zellij --config "${config_path}" --config-dir "${zellij_src}" setup --check >"${capture}" 2>&1; then
+        save_log "${capture}"
+        rm -f "${capture}"
+        return 0
+    fi
+
+    printf '%s\n' "Zellij rejected rendered config ${config_path}:" >&2
+    sed 's/^/  | /' "${capture}" >&2
+    save_log "${capture}"
+    rm -f "${capture}"
+    return 1
 }
 
 install_locked_zellij_plugins() {
@@ -144,7 +209,8 @@ install_locked_zellij_plugins() {
             exit 1
         fi
         destination="${plugins_dest}/${filename}"
-        if [ -f "${destination}" ] && [ "$(sha256_file "${destination}")" = "${expected_sha}" ]; then
+        if [ -f "${destination}" ] && [ ! -L "${destination}" ] && \
+            [ "$(sha256_file "${destination}")" = "${expected_sha}" ]; then
             printf '%s\n' "Pinned ${filename} ${version} already verified"
             continue
         fi
@@ -152,7 +218,17 @@ install_locked_zellij_plugins() {
         printf '%s' "Downloading pinned ${filename} ${version}"
         if curl --fail --location --silent --show-error "${url}" -o "${temporary}" \
             && [ "$(sha256_file "${temporary}")" = "${expected_sha}" ]; then
+            # A directory (or a symlink to one) is not a valid plugin artifact.
+            # Move real directories aside and remove links themselves before
+            # the final rename, otherwise mv may place the temporary inside it
+            # and still return success.
+            backup_if_real "${destination}"
             run_cmd mv "${temporary}" "${destination}"
+            if [ ! -f "${destination}" ] || [ -L "${destination}" ] || \
+                [ "$(sha256_file "${destination}")" != "${expected_sha}" ]; then
+                printf '%s\n' "Pinned plugin ${destination} was not installed as the expected regular file."
+                exit 1
+            fi
         else
             rm -f "${temporary}"
             printf '%s\n' " failed checksum or download for ${filename}"
@@ -161,25 +237,71 @@ install_locked_zellij_plugins() {
     done < "${lockfile}"
 }
 
+render_zellij_config() {
+    local destination="${1}"
+    local rendered kdl_home escaped_home
+
+    # Keep the temporary beside the destination so the final rename is atomic
+    # even when /tmp and the user's config directory are different filesystems.
+    rendered="$(mktemp "${destination}.tmp.XXXXXX")"
+
+    # HOME is inserted into a KDL string through a sed replacement. Escape the
+    # KDL value first, then escape sed replacement metacharacters (including
+    # the chosen `|` delimiter).
+    kdl_home="$(escape_kdl_string "${HOME}")"
+    escaped_home="$(printf '%s' "${kdl_home}" | sed 's/[\\&|]/\\&/g')"
+    if ! sed "s|@@HOME@@|${escaped_home}|g" "${zellij_src}/config.kdl" > "${rendered}"; then
+        rm -f "${rendered}"
+        printf '%s\n' "Unable to render config.kdl. Check template placeholders."
+        exit 1
+    fi
+
+    if ! validate_zellij_config "${rendered}"; then
+        rm -f "${rendered}"
+        printf '%s\n' "Rendered Zellij config was not installed; the existing config is unchanged." >&2
+        exit 1
+    fi
+
+    # A generated config is already managed content. Only a different regular
+    # file is treated as user content and moved aside before replacement.
+    if [ -f "${destination}" ] && cmp -s "${rendered}" "${destination}"; then
+        rm -f "${rendered}"
+        printf '%s\n' "Zellij config already current"
+        return 0
+    fi
+    backup_if_real "${destination}"
+
+    printf '%s' "Installing rendered Zellij config"
+    run_cmd mv "${rendered}" "${destination}"
+}
+
 setup_zellij() {
     check_if_installed_and_exit zellij
     check_if_installed_and_exit curl
-    check_if_installed_and_exit sha256sum
+    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+        printf '%s\n' "Missing checksum command: install sha256sum or shasum."
+        exit 1
+    fi
 
     printf '%s' "Creating Zellij configuration directories"
     run_cmd mkdir -p "${zellij_dest}/layouts"
 
     for source in config.kdl layouts/kayg.kdl; do
         destination="${zellij_dest}/${source}"
-        backup_if_real "${destination}"
-        printf '%s' "Linking Zellij ${source}"
-        run_cmd ln -sf "${zellij_src}/${source}" "${destination}"
+        if [ "${source}" = "config.kdl" ]; then
+            printf '%s' "Rendering Zellij ${source} for ${HOME}"
+            render_zellij_config "${destination}"
+        else
+            backup_if_real "${destination}"
+            printf '%s' "Linking Zellij ${source}"
+            run_cmd ln -sf "${zellij_src}/${source}" "${destination}"
+        fi
     done
 
     install_locked_zellij_plugins
 
     printf '%s' "Checking Zellij configuration"
-    run_cmd zellij setup --check
+    run_cmd zellij --config "${zellij_dest}/config.kdl" setup --check
 }
 
 update_zellij() {
@@ -207,7 +329,44 @@ zsh_plugins="
     https://github.com/zsh-users/zsh-syntax-highlighting
 "
 
+zsh_plugin_is_checkout() {
+    local plugin_dir="${1}"
+    local plugin_root expected_root plugin_git_dir
+
+    if [ ! -d "${plugin_dir}" ] || \
+        { [ ! -d "${plugin_dir}/.git" ] && [ ! -f "${plugin_dir}/.git" ]; }; then
+        return 1
+    fi
+    plugin_root="$(git -C "${plugin_dir}" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    expected_root="$(cd "${plugin_dir}" && pwd -P)" || return 1
+    [ "${plugin_root}" = "${expected_root}" ] || return 1
+    if [ -f "${plugin_dir}/.git" ]; then
+        plugin_git_dir="$(git -C "${plugin_dir}" rev-parse --git-dir 2>/dev/null)" || return 1
+        case "${plugin_git_dir}" in
+            */worktrees/*) ;;
+            *) return 1 ;;
+        esac
+    fi
+    git -C "${plugin_dir}" rev-parse --verify HEAD >/dev/null 2>&1
+}
+
 setup_zsh() {
+    check_if_installed_and_exit git
+
+    # Validate every pre-existing plugin path before changing zshenv or any
+    # configuration. Empty/non-clone directories commonly result from an
+    # interrupted clone and must not be silently treated as installed.
+    for plugin in ${zsh_plugins}; do
+        plugin_name="$(basename "${plugin}")"
+        plugin_dir="${zsh_dest_plugins}/${plugin_name}"
+        if [ -L "${plugin_dir}" ] || [ -e "${plugin_dir}" ]; then
+            if ! zsh_plugin_is_checkout "${plugin_dir}"; then
+                printf '%s\n' "Cannot install ${plugin}: ${plugin_dir} exists but is not a git checkout. Remove or rename it, then retry."
+                exit 1
+            fi
+        fi
+    done
+
     # symlink zshenv to $HOME so zsh picks up ZDOTDIR
     backup_if_real "${HOME}/.zshenv"
 
@@ -224,7 +383,7 @@ setup_zsh() {
         plugin_name="$(basename "${plugin}")"
         plugin_dir="${zsh_dest_plugins}/${plugin_name}"
 
-        if [ -d "${plugin_dir}" ]; then
+        if zsh_plugin_is_checkout "${plugin_dir}"; then
             printf '%s\n' "  Skipping ${plugin} (already exists)"
         else
             printf '%s' "  Cloning ${plugin}"
@@ -245,14 +404,27 @@ setup_zsh() {
 }
 
 update_zsh() {
-    printf '%s\n' 'Updating plugins'
-    for plugin in "${zsh_dest_plugins}"/*; do
-        # an empty plugins directory leaves the glob unexpanded, and anything
-        # that is not a clone has nothing to pull
-        [ -d "${plugin}/.git" ] || continue
+    check_if_installed_and_exit git
 
-        printf '%s' "  Updating $(basename "${plugin}")"
-        run_cmd git -C "${plugin}" pull
+    # Validate every declared plugin before pulling any of them. A missing,
+    # corrupt, or parent-repository path must fail as a setup problem instead
+    # of silently disappearing from the glob below or causing a partial update.
+    for plugin in ${zsh_plugins}; do
+        plugin_name="$(basename "${plugin}")"
+        plugin_dir="${zsh_dest_plugins}/${plugin_name}"
+        if ! zsh_plugin_is_checkout "${plugin_dir}"; then
+            printf '%s\n' "Cannot update ${plugin}: ${plugin_dir} is not a valid git checkout rooted at that path." >&2
+            exit 1
+        fi
+    done
+
+    printf '%s\n' 'Updating plugins'
+    for plugin in ${zsh_plugins}; do
+        plugin_name="$(basename "${plugin}")"
+        plugin_dir="${zsh_dest_plugins}/${plugin_name}"
+
+        printf '%s' "  Updating ${plugin_name}"
+        run_cmd git -C "${plugin_dir}" pull
     done
 }
 
@@ -268,12 +440,23 @@ link_atuin() {
     printf '%s' 'Creating ~/.local/bin directory'
     run_cmd mkdir -p "${HOME}/.local/bin"
 
+    atuin_binary="$(command -v atuin)"
+    if [ -z "${atuin_binary}" ]; then
+        printf '%s\n' "atuin is not on PATH. Run Nix/Home Manager setup first."
+        exit 1
+    fi
+
     # symlink to ~/.local/bin so atuin stays on PATH even when a popup or
     # daemon environment does not include ~/.atuin/bin
-    backup_if_real "${HOME}/.local/bin/atuin"
+    atuin_destination="${HOME}/.local/bin/atuin"
+    if [ "${atuin_binary}" = "${atuin_destination}" ]; then
+        printf '%s\n' 'Atuin is already linked into ~/.local/bin'
+    else
+        backup_if_real "${atuin_destination}"
 
-    printf '%s' 'Linking atuin to ~/.local/bin'
-    run_cmd ln -sf "${HOME}/.atuin/bin/atuin" "${HOME}/.local/bin/atuin"
+        printf '%s' 'Linking atuin to ~/.local/bin'
+        run_cmd ln -sf "${atuin_binary}" "${atuin_destination}"
+    fi
 
     printf '%s' 'Creating ~/.config/atuin directory'
     run_cmd mkdir -p "${HOME}/.config/atuin"
@@ -310,39 +493,77 @@ doom_framework="${HOME}/.config/emacs"
 doom_src="${repo_path}/doom-emacs"
 doom_dest="${HOME}/.config/doom"
 
-# Run a long command in a floating zellij pane so the user can keep working.
-# Args: pane-name, command...
-# A bare `zellij action ...` from inside a pane can hang on the session socket
-# (observed on 0.45.x: the CLI call blocks and no pane ever opens), so the call
-# targets the session explicitly and gets a hang guard: if the CLI call has not
-# returned within 10 seconds it is killed and the caller falls back to running
-# the command in the foreground. A successful spawn returns immediately.
-run_in_floating_pane() {
-    pane_name="${1}"
+run_doom() {
+    local doom_cli_path="${1}"
     shift
-    if ! command -v zellij >/dev/null 2>&1 || [ -z "${ZELLIJ_SESSION_NAME:-}" ]; then
-        return 1
+
+    # Doom's global --force suppresses prompts while run_cmd captures output,
+    # and these variables keep install/sync aligned with the overlay paths.
+    DOOMDIR="${doom_dest}" EMACSDIR="${doom_framework}" \
+        run_cmd "${doom_cli_path}" --force "$@"
+}
+
+install_doom_file() {
+    local source="${1}"
+    local destination="${2}"
+    local filename
+    filename="$(basename "${source}")"
+
+    if [ -f "${destination}" ] && cmp -s "${source}" "${destination}"; then
+        printf '%s\n' "Doom ${filename} already current"
+        return 0
     fi
 
-    printf '%s\n' "Launching '${pane_name}' in a floating zellij pane (you can keep working; the pane closes when it finishes)"
-    zellij --session "${ZELLIJ_SESSION_NAME}" action new-pane \
-        --floating --close-on-exit --name "${pane_name}" -- "$@" &
-    pane_pid="${!}"
+    # Preserve a real file before replacing it. Symlinks are managed pointers;
+    # remove a divergent one so cp cannot follow it into an unrelated target.
+    if [ -e "${destination}" ] && [ ! -L "${destination}" ]; then
+        backup_if_real "${destination}"
+    elif [ -L "${destination}" ]; then
+        printf '%s' "Removing divergent Doom ${filename} symlink"
+        run_cmd rm -f "${destination}"
+    fi
 
-    # guard: if the action CLI hangs, kill it and report failure
-    counter=0
-    while kill -0 "${pane_pid}" 2>/dev/null; do
-        counter=$((counter + 1))
-        if [ "${counter}" -ge 50 ]; then   # 50 x 0.1s = 5s
-            kill "${pane_pid}" 2>/dev/null || true
-            wait "${pane_pid}" 2>/dev/null
-            printf '%s\n' "zellij action did not return; falling back to foreground"
-            return 1
+    printf '%s' "Installing Doom ${filename}"
+    run_cmd cp -p "${source}" "${destination}"
+}
+
+overlay_doom_files() {
+    local source_dir="${1}"
+    local filename
+
+    for filename in init.el config.el packages.el; do
+        if [ -f "${source_dir}/${filename}" ]; then
+            install_doom_file "${source_dir}/${filename}" "${doom_dest}/${filename}"
         fi
-        sleep 0.1
     done
-    wait "${pane_pid}" 2>/dev/null
-    return 0
+}
+
+overlay_doom_config() {
+    local staging archive
+
+    if [ -d "${doom_src}/.git" ]; then
+        # Archive to a file first. Wrapping `git archive` in run_cmd and piping
+        # it to tar would capture the archive bytes and pipe only " done".
+        staging="$(mktemp -d "${TMPDIR:-/tmp}/dot-doom.XXXXXX")"
+        archive="${staging}/doom-config.tar"
+        printf '%s' "Archiving tracked Doom config"
+        run_cmd git -C "${doom_src}" archive --format=tar --output="${archive}" HEAD
+        printf '%s' "Extracting tracked Doom config"
+        run_cmd tar -xf "${archive}" -C "${staging}"
+        overlay_doom_files "${staging}"
+        run_cmd rm -rf "${staging}"
+    elif [ -f "${doom_src}/init.el" ]; then
+        # Plain files tracked directly in this repository.
+        printf '%s' "Copying tracked Doom config into ${doom_dest}"
+        overlay_doom_files "${doom_src}"
+    fi
+}
+
+sync_doom_runtime() {
+    local doom_cli_path="${1}"
+
+    printf '%s' "Synchronizing Doom runtime"
+    run_doom "${doom_cli_path}" sync
 }
 
 setup_doom() {
@@ -367,60 +588,53 @@ setup_doom() {
     if [ ! -x "${doom_cli}" ] && command -v doom >/dev/null 2>&1; then
         doom_cli="$(command -v doom)"
     fi
+    if [ ! -x "${doom_cli}" ]; then
+        printf '%s\n' "Doom CLI not found at ${doom_framework}/bin/doom or on PATH."
+        exit 1
+    fi
 
     # 2. install packages + deploy the default config into DOOMDIR
     if [ -f "${doom_dest}/init.el" ]; then
         printf '%s\n' "Doom config already deployed at ${doom_dest}"
-    elif [ -n "${ZELLIJ_SESSION_NAME:-}" ] && command -v zellij >/dev/null 2>&1; then
-        printf '%s' "Installing Doom packages (this takes a while)"
-        if run_in_floating_pane "doom install" "${doom_cli}" install; then
-            printf '%s\n' "Run 'doom doctor' from ${doom_cli} once the install finishes."
-            return 0
-        fi
-        # fall through to the foreground path if the pane could not be spawned
-        run_cmd "${doom_cli}" install
     else
+        # Keep this synchronous: the tracked config is overlaid immediately
+        # below, so it must wait until Doom has finished installing packages.
         printf '%s' "Installing Doom packages (this takes a while)"
-        run_cmd "${doom_cli}" install
+        run_doom "${doom_cli}" install
     fi
 
-    # 3. overlay the repo's Doom config over the deployed defaults
-    if [ -d "${doom_src}/.git" ]; then
-        # source is a git checkout of just the doom config
-        printf '%s' "Syncing tracked Doom config into ${doom_dest}"
-        run_cmd git -C "${doom_src}" archive HEAD | tar -x -C "${doom_dest}"
-    elif [ -f "${doom_src}/init.el" ]; then
-        # plain files tracked directly in this repository
-        printf '%s' "Copying tracked Doom config into ${doom_dest}"
-        run_cmd cp -p "${doom_src}"/init.el "${doom_src}"/config.el "${doom_src}"/packages.el "${doom_dest}"/
-    fi
+    # 3. overlay the repo's Doom config over the deployed defaults, preserving
+    # any divergent files already present in DOOMDIR.
+    overlay_doom_config
+    sync_doom_runtime "${doom_cli}"
 }
 
 update_doom() {
+    check_if_installed_and_exit emacs
+    check_if_installed_and_exit git
+
     if [ ! -d "${doom_framework}/.git" ]; then
         printf '%s\n' "No Doom framework at ${doom_framework}; run 'dot setup doom' first."
         exit 1
     fi
+    doom_cli="${doom_framework}/bin/doom"
+    if [ ! -x "${doom_cli}" ] && command -v doom >/dev/null 2>&1; then
+        doom_cli="$(command -v doom)"
+    fi
+    if [ ! -x "${doom_cli}" ]; then
+        printf '%s\n' "Doom CLI not found at ${doom_framework}/bin/doom or on PATH."
+        exit 1
+    fi
+
     printf '%s' "Updating the Doom framework"
     run_cmd git -C "${doom_framework}" pull
 
-    # Overlay this repo's tracked Doom config (if any) over DOOMDIR.
-    if [ -d "${doom_src}/.git" ]; then
-        printf '%s' "Syncing tracked Doom config into ${doom_dest}"
-        run_cmd git -C "${doom_src}" archive HEAD | tar -x -C "${doom_dest}"
-    elif [ -f "${doom_src}/init.el" ]; then
-        printf '%s' "Copying tracked Doom config into ${doom_dest}"
-        run_cmd cp -p "${doom_src}"/init.el "${doom_src}"/config.el "${doom_src}"/packages.el "${doom_dest}"/
-    fi
-
-    # Re-sync the Doom runtime after framework/config changes. Without the CLI
-    # the pull alone is still safe.
-    if [ -x "${doom_framework}/bin/doom" ]; then
-        printf '%s' "Rebuilding the Doom runtime"
-        run_cmd "${doom_framework}/bin/doom" sync
-    else
-        printf '%s\n' "Skipped 'doom sync' (doom CLI not found)."
-    fi
+    # Overlay this repo's tracked Doom config (if any), then rebuild the runtime
+    # so package declarations such as packages.el take effect.
+    printf '%s' "Creating ${doom_dest} directory"
+    run_cmd mkdir -p "${doom_dest}"
+    overlay_doom_config
+    sync_doom_runtime "${doom_cli}"
 }
 
 # ssh
@@ -429,7 +643,23 @@ update_doom() {
 ssh_src="${repo_path}/.ssh"
 ssh_dest="${HOME}/.ssh"
 
+validate_ssh_local_destination() {
+    local destination="${ssh_dest}/config.local"
+
+    if [ -e "${destination}" ] || [ -L "${destination}" ]; then
+        if [ -f "${destination}" ]; then
+            return 0
+        fi
+        printf '%s\n' "Cannot seed ${destination}: it exists but is not a regular file. Refusing to follow or overwrite it; remove or replace it, then retry." >&2
+        exit 1
+    fi
+}
+
 setup_ssh() {
+    # Check this before mkdir/chmod/link work so a dangling link or directory
+    # cannot trigger partial setup before the actionable failure.
+    validate_ssh_local_destination
+
     # create ~/.ssh directory with correct permissions
     printf '%s' "Creating ${ssh_dest} directory"
     run_cmd mkdir -p "${ssh_dest}"
@@ -494,7 +724,10 @@ setup_karabiner() {
     check_if_installed_and_exit npm
 
     printf '%s' "Installing Karabiner configuration dependencies"
-    run_cmd npm install --prefix "${karabiner_src}"
+    run_cmd npm ci --prefix "${karabiner_src}"
+
+    printf '%s' "Checking generated Karabiner-Elements configuration"
+    run_cmd npm run --prefix "${karabiner_src}" check
 
     printf '%s' "Generating Karabiner-Elements configuration"
     run_cmd npm run --prefix "${karabiner_src}" build
@@ -505,34 +738,37 @@ update_karabiner() {
 }
 
 # nix — macOS + Linux. The wizard lives in scripts/lib/nix.sh (it grew past
-# what belongs inline here): detects the OS, installs Determinate Nix if
-# missing (interactive), pins flake:nixpkgs to nixpkgs-unstable HEAD, then wires
-# the platform piece (Linux: systemd user timer for daily unstable refresh;
-# macOS: home-manager flake check + optional switch).
-# This is the only place dot touches packages: the Nix wizard installs the
-# package manager itself (no further sudo afterwards) and Home Manager owns
-# user packages.
+# what belongs inline here): detects the OS, installs Nix if missing, then wires
+# the platform-specific update mechanism and Home Manager configuration.
+# Home Manager owns user packages; this dispatcher only forwards the wizard's
+# setup or update options.
 
 # sourced lib is bash-flavored (local, BASH_SOURCE); linted separately as bash
 # shellcheck disable=SC1091
 . "${script_path}/lib/nix.sh"
 
 setup_nix() {
-    dot_nix_main
+    dot_nix_main "$@"
 }
 
 update_nix() {
-    setup_nix
+    "${repo_path}/nix/nix-unstable-update" "$@"
 }
 
 main() {
-    if [ "${#}" -ne 2 ]; then
+    if [ "${#}" -lt 2 ]; then
         usage
         exit 1
     fi
 
     action="${1}"
     app="${2}"
+    shift 2
+
+    if [ "${#}" -gt 0 ] && [ "${app}" != "nix" ]; then
+        usage
+        exit 1
+    fi
 
     case "${action}" in
         setup|update) ;;
@@ -554,13 +790,13 @@ main() {
     # managers or shell-level helpers. nix is exempt because `dot setup nix`
     # is itself the installer for the Nix package manager.
     case "${app}" in
-        dot|doom|nix) ;;
+        dot|doom|karabiner|nix) ;;
         *) check_if_installed_and_exit "${app}" ;;
     esac
 
-    "${action}_${app}"
+    "${action}_${app}" "$@"
 }
 
-main "${@}"
+main "$@"
 
 exit 0

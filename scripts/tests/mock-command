@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+case "$(basename "${0}")" in
+    zellij)
+        if [ "${DOT_TEST_ZELLIJ_FAIL:-0}" = 1 ]; then
+            printf '%s\n' 'mock zellij parser failure' >&2
+            exit 1
+        fi
+        # A successful pane request does not execute the child command. The
+        # Doom regression test therefore catches callers that treat a spawned
+        # pane as a completed install.
+        ;;
+    curl)
+        output=''
+        while [ "${#}" -gt 0 ]; do
+            case "${1}" in
+                -o) output="${2}"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        [ -n "${output}" ]
+        printf '%s\n' 'mock plugin' > "${output}"
+        ;;
+    sha256sum|shasum)
+        checksum_file="${!#}"
+        case "$(basename "${checksum_file}")" in
+            zjstatus.wasm*) expected_sha="${DOT_TEST_ZJSTATUS_SHA}" ;;
+            zellij-tabula.wasm*) expected_sha="${DOT_TEST_TABULA_SHA}" ;;
+            *) expected_sha="${DOT_TEST_EXPECTED_SHA}" ;;
+        esac
+        printf '%s  %s\n' "${expected_sha}" "${checksum_file}"
+        ;;
+    emacs)
+        ;;
+    git)
+        if [ "${1:-}" = clone ]; then
+            mkdir -p "${5}/.git"
+        elif [ "${1:-}" = -C ] && [ "${3:-}" = archive ]; then
+            exec "${DOT_TEST_REAL_GIT}" "$@"
+        elif [ "${1:-}" = -C ] && [ "${3:-}" = rev-parse ]; then
+            if [ "${4:-}" = --show-toplevel ]; then
+                (cd "${2}" && pwd -P)
+            elif [ "${4:-}" = --git-dir ]; then
+                if [ -f "${2}/.git" ]; then
+                    printf '%s\n' "${2}/.git/worktrees/mock"
+                else
+                    printf '%s\n' "${2}/.git"
+                fi
+            fi
+        fi
+        ;;
+    doom)
+        doom_action=''
+        doom_force=0
+        for doom_arg in "$@"; do
+            case "${doom_arg}" in
+                --force) doom_force=1 ;;
+                install|sync) doom_action="${doom_arg}" ;;
+            esac
+        done
+        if [ "${doom_force}" -ne 1 ]; then
+            printf '%s\n' 'doom command was not given global --force' >&2
+            exit 1
+        fi
+        if [ -n "${DOT_TEST_EXPECTED_DOOMDIR:-}" ] && \
+            [ "${DOOMDIR:-}" != "${DOT_TEST_EXPECTED_DOOMDIR}" ]; then
+            printf 'unexpected DOOMDIR: %s\n' "${DOOMDIR:-unset}" >&2
+            exit 1
+        fi
+        if [ -n "${DOT_TEST_EXPECTED_EMACSDIR:-}" ] && \
+            [ "${EMACSDIR:-}" != "${DOT_TEST_EXPECTED_EMACSDIR}" ]; then
+            printf 'unexpected EMACSDIR: %s\n' "${EMACSDIR:-unset}" >&2
+            exit 1
+        fi
+        if [ "${doom_action}" = install ]; then
+            doom_dest="${DOOMDIR:-${HOME}/.config/doom}"
+            mkdir -p "${doom_dest}"
+            printf '%s\n' install >> "${DOT_TEST_EVENT_LOG}"
+            : > "${DOT_TEST_INSTALL_MARKER}"
+            printf '%s\n' 'doom defaults' > "${doom_dest}/init.el"
+        elif [ "${doom_action}" = sync ]; then
+            printf '%s\n' sync >> "${DOT_TEST_EVENT_LOG}"
+        else
+            printf 'unknown doom command: %s\n' "$*" >&2
+            exit 1
+        fi
+        ;;
+    atuin)
+        ;;
+    zsh)
+        ;;
+    cp)
+        [ -e "${DOT_TEST_INSTALL_MARKER}" ]
+        printf '%s\n' overlay >> "${DOT_TEST_EVENT_LOG}"
+        exec "${DOT_TEST_REAL_CP}" "$@"
+        ;;
+    *)
+        printf 'unknown mock command: %s\n' "$(basename "${0}")" >&2
+        exit 127
+        ;;
+esac

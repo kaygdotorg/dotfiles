@@ -17,6 +17,7 @@
 
 # Editor / tool state
 .claude/
+zsh/.zcompdump*
 
 # Node dependencies
 node_modules/
@@ -27,3 +28,7 @@ modern-cli-tools.md
 # tmux debug logs
 tmux-client-*.log
 tmux-server-*.log
+
+# Python validation state
+__pycache__/
+*.py[cod]

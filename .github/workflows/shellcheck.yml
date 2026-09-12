@@ -1,7 +1,4 @@
-name: shellcheck
-
-# Lints the POSIX sh in this repository. `dot update ssh` shipped broken
-# (calling an update_ssh that was never defined) because nothing checked.
+name: checks
 
 on:
   push:
@@ -10,29 +7,33 @@ on:
   workflow_dispatch:
 
 jobs:
-  shellcheck:
-    runs-on: ubuntu-latest
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Install ShellCheck
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y shellcheck zsh
 
-      - name: Lint scripts
-        # SC2317 (unreachable command) is excluded: `dot` dispatches through
-        # "${action}_${app}", so every setup_*/update_* function looks unused
-        # to static analysis. The next step covers that dispatch instead.
-        # scripts/dot is POSIX sh; scripts/lib/nix.sh is bash-flavored
-        # (local, BASH_SOURCE, $'..') and must be linted as bash.
+      - name: Install ShellCheck on macOS
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
+
+      - name: Lint shell scripts
+        # Dynamic dispatch and sourced helpers look unused to static analysis.
         run: |
-          shellcheck --shell=sh   --exclude=SC2317,SC2329 scripts/dot
-          shellcheck --shell=bash --exclude=SC2317,SC2329 scripts/lib/nix.sh
+          shellcheck --shell=bash --exclude=SC2317,SC2329 scripts/dot scripts/lib/nix.sh nix/install-cache nix/nix-unstable-update nix/realize-home
+          bash -n scripts/dot
+          bash -n scripts/lib/nix.sh
+          bash -n nix/nix-unstable-update
+          zsh -n zsh/.zshenv zsh/.zshrc
 
-      - name: Check every dispatchable app has both actions
-        # `dot <action> <app>` dispatches to "${action}_${app}" — a missing
-        # function is only discovered at runtime, as exit 127. The app slug is
-        # `doom`, dispatching to setup_doom/update_doom. setup_nix and
-        # update_nix live in scripts/lib/nix.sh, which is sourced by dot.
+      - name: Check command dispatch
         run: |
           status=0
           for app in dot zsh zellij doom atuin ssh karabiner nix; do
@@ -43,4 +44,56 @@ jobs:
               fi
             done
           done
-          exit "${status}"
+          exit "$status"
+
+      - name: Install the pinned Zellij binary for parser tests
+        run: |
+          case "$(uname -s):$(uname -m)" in
+            Linux:x86_64)
+              target=x86_64-unknown-linux-musl
+              checksum=40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc
+              ;;
+            Linux:aarch64)
+              target=aarch64-unknown-linux-musl
+              checksum=05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b
+              ;;
+            Darwin:arm64)
+              target=aarch64-apple-darwin
+              checksum=c029ba4fe1927b79ad9f0cdd59155c4dff80777863c85857d4d09b88b56f9891
+              ;;
+            Darwin:x86_64)
+              target=x86_64-apple-darwin
+              checksum=8e8bea22737d1652278c51fc5c26c7c22c9855d0ebb9634a84b8873823093114
+              ;;
+            *) echo "Unsupported test platform" >&2; exit 1 ;;
+          esac
+          archive="${RUNNER_TEMP}/zellij.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-${target}.tar.gz" \
+            -o "${archive}"
+          printf '%s  %s\n' "${checksum}" "${archive}" | shasum -a 256 -c -
+          mkdir -p "${RUNNER_TEMP}/dot-tools"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/dot-tools" zellij
+          echo "${RUNNER_TEMP}/dot-tools" >> "${GITHUB_PATH}"
+
+      - name: Verify bootstrap, updates, and rollback with isolated fixtures
+        env:
+          DOT_REQUIRE_ZELLIJ: '1'
+        run: |
+          /bin/bash scripts/tests/dot-regressions.sh
+          /bin/bash tests/nix-bootstrap.sh
+          /bin/bash tests/nix-update.sh
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: karabiner-ts/package-lock.json
+
+      - name: Validate Karabiner without writing a live profile
+        working-directory: karabiner-ts
+        run: |
+          npm ci
+          npm run check
+          npm test

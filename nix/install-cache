@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Install the repository's Numtide cache configuration.
+#
+# This is a small standalone entry point for hosts that already have Nix. The
+# bootstrap calls the same dot_nix_install_cache function directly so it can
+# keep the cache result in the numbered setup flow.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+install_cache_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+repo_path="${install_cache_repo}"
+# shellcheck disable=SC1091
+. "${install_cache_repo}/scripts/lib/nix.sh"
+
+wizard_preflight_existing_nix
+dot_nix_install_cache
