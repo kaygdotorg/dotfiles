@@ -7,11 +7,11 @@
 
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "omniwm";
-  version = "0.6.9";
+  version = "0.6.10";
 
   src = fetchurl {
     url = "https://github.com/BarutSRB/OmniWM/releases/download/v${finalAttrs.version}/OmniWM-v${finalAttrs.version}.zip";
-    hash = "sha256-nCSrF04RoeIRVaBkDgMjvqp+IqQC5ZtpaUyEZbACsWU=";
+    hash = "sha256-EO74kwd9IQ0VRfV3WiuSsvNm32HbT72KvCKzqx0IxK8=";
   };
 
   dontUnpack = true;
