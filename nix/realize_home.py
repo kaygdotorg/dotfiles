@@ -25,6 +25,10 @@ from typing import Any, Iterable, Mapping, Sequence
 
 MIN_NIX_VERSION = (2, 35, 0)
 STORE_DIR = "/nix/store"
+# Keep each command line bounded while still giving Nix enough installables to
+# schedule substitutions concurrently.  The private out-link prefix is
+# allocated once per invocation below.
+MAX_BUILD_SELECTORS = 64
 
 
 class RealizeHomeError(RuntimeError):
@@ -400,9 +404,13 @@ class Nix:
         return DerivationGraph.from_json(value)
 
     def build(self, selectors: Sequence[str], max_jobs: int) -> None:
-        if not selectors:
+        # A selector is an exact derivation output.  Preserve first-seen order
+        # for deterministic plans while avoiding duplicate installables when a
+        # cached package is also an external input of a reviewed derivation.
+        unique_selectors = tuple(dict.fromkeys(selectors))
+        if not unique_selectors:
             return
-        for selector in selectors:
+        for selector in unique_selectors:
             if ".drv^" not in selector or selector.endswith("^*"):
                 raise DeploymentError(f"refusing unscoped build selector: {selector}")
         if self.gc_root_dir is None:
@@ -411,12 +419,16 @@ class Nix:
             )
         self.gc_root_dir.mkdir(parents=True, exist_ok=True)
         options = cache_only_options() if max_jobs == 0 else local_build_options()
-        # Keep one out-link per selector.  Besides making each exact output a
-        # GC root, this avoids relying on Nix's multi-result out-link naming.
-        for selector in selectors:
-            out_link = self.gc_root_dir / f"result-{self._out_link_counter}"
+        # One invocation with multiple installables lets Nix schedule cache
+        # substitutions concurrently.  Nix creates one symlink per result
+        # using this path as a prefix (``prefix``, ``prefix-1`` or
+        # ``prefix-1-output``), so every result remains rooted in the private
+        # directory until the activation transaction has finished.
+        for start in range(0, len(unique_selectors), MAX_BUILD_SELECTORS):
+            batch = unique_selectors[start : start + MAX_BUILD_SELECTORS]
+            out_link = self.gc_root_dir / f"batch-{self._out_link_counter}"
             self._out_link_counter += 1
-            args = ["build", "--out-link", str(out_link), *options, selector]
+            args = ["build", "--out-link", str(out_link), *options, *batch]
             self._run(args)
 
     def version(self) -> tuple[int, int, int]:
@@ -537,6 +549,7 @@ class Realizer:
     output: Any = sys.stdout
     graph: DerivationGraph | None = None
     _realized: set[tuple[str, tuple[str, ...]]] = field(default_factory=set)
+    _cache_realized: set[str] = field(default_factory=set)
     _in_progress: set[str] = field(default_factory=set)
 
     def say(self, message: str) -> None:
@@ -572,16 +585,85 @@ class Realizer:
         cached_graph = self.nix.derivation_show(cached_paths, recursive=False)
         self.graph = (self.graph or DerivationGraph(derivations={})).merge(cached_graph)
 
+    def cache_only_selectors(self) -> tuple[str, ...]:
+        """Collect the reviewed cache frontier in stable, de-duplicated order.
+
+        Cached package records are explicit roots.  For local derivations,
+        only their direct inputs are collected here; walking into an external
+        derivation would harvest its build-time graph even though Nix can
+        substitute that graph as part of the exact external output request.
+        Reviewed local derivations stay on the serial topological path below.
+        """
+
+        if self.graph is None:
+            raise RealizeHomeError("cache-only graph was not prepared")
+
+        selectors: list[str] = []
+        seen: set[str] = set()
+
+        def add(drv_path: str, output_names: Sequence[str]) -> None:
+            for output_name in output_names or ("out",):
+                selector = _selector(drv_path, output_name)
+                if selector not in seen:
+                    seen.add(selector)
+                    selectors.append(selector)
+
+        for artifact in self.deployment.cached:
+            selected = selectors_for(artifact, self.graph)
+            add(artifact.drv_path, tuple(name for name, _ in selected))
+
+        local_paths = self.local_allowlist
+        for artifact in self.local_artifacts:
+            derivation = self.graph.get(artifact.drv_path)
+            if derivation is None:
+                raise RealizeHomeError(
+                    f"local derivation missing from graph: {artifact.drv_path}"
+                )
+            # A warm reviewed output is already usable and is rooted by the
+            # serial local-hit path below.  Its build-time inputs need not be
+            # fetched (and may no longer have substitutes), matching the
+            # existing early-return behavior in ``realize_local``.
+            selected = selectors_for(artifact, self.graph)
+            if _paths_available(path for _, path in selected):
+                continue
+            for dependency, output_names in derivation.inputs():
+                if dependency not in local_paths:
+                    add(dependency, output_names)
+
+        return tuple(selectors)
+
+    def realize_cached_batch(self) -> None:
+        """Fetch and root all package/frontier outputs before local builds."""
+
+        selectors = self.cache_only_selectors()
+        if not selectors:
+            return
+        self.say(f"cache-only fetch batch: {len(selectors)} outputs")
+        try:
+            self.nix.build(selectors, max_jobs=0)
+        except CommandError as exc:
+            raise RealizeHomeError(
+                "cache-only fetch failed for batch; refusing a local build\n"
+                f"{exc}"
+            ) from exc
+        # The entire batch is considered complete only after every bounded Nix
+        # invocation succeeds.  This prevents a partial batch from being
+        # mistaken for a rooted dependency if a later invocation failed.
+        self._cache_realized.update(selectors)
+
     def realize_cached(self, artifact: Artifact) -> None:
         assert self.graph is not None
         selected = selectors_for(artifact, self.graph)
         selector_strings = tuple(_selector(artifact.drv_path, name) for name, _ in selected)
+        if selector_strings and all(selector in self._cache_realized for selector in selector_strings):
+            return
         if _paths_available(path for _, path in selected):
             self.say(f"cached hit: {artifact.name}")
             # Re-root hits as well as substitutes.  A concurrent collector can
             # otherwise remove an existing dependency before an approved
             # local parent is built.
             self.nix.build(selector_strings, max_jobs=0)
+            self._cache_realized.update(selector_strings)
             return
         self.say(f"cache-only fetch: {artifact.name}")
         try:
@@ -591,6 +673,7 @@ class Realizer:
                 f"cache-only fetch failed for {artifact.name} ({artifact.drv_path}); "
                 f"refusing a local build\n{exc}"
             ) from exc
+        self._cache_realized.update(selector_strings)
 
     def _dependency_paths(self, drv_path: str, output_names: Sequence[str]) -> list[str | None]:
         if self.graph is None:
@@ -604,13 +687,24 @@ class Realizer:
         # A dependency already present in the store needs no dependency-graph
         # traversal.  It still gets a cache-only command below so its output
         # remains rooted until the reviewed parent is complete.
-        paths = self._dependency_paths(drv_path, output_names)
-        selectors = tuple(_selector(drv_path, name) for name in output_names or ("out",))
-        if _paths_available(paths):
+        names = tuple(output_names) or ("out",)
+        selectors = tuple(_selector(drv_path, name) for name in names)
+        pending = tuple(
+            (name, selector)
+            for name, selector in zip(names, selectors)
+            if selector not in self._cache_realized
+        )
+        if not pending:
+            return
+        pending_names = tuple(name for name, _ in pending)
+        pending_selectors = tuple(selector for _, selector in pending)
+        pending_paths = self._dependency_paths(drv_path, pending_names)
+        if _paths_available(pending_paths):
             # Even a store hit needs a live root until its reviewed parent has
             # finished.  Use the cache-only command so this cannot become a
             # local build through an accidental policy change.
-            self.nix.build(selectors, max_jobs=0)
+            self.nix.build(pending_selectors, max_jobs=0)
+            self._cache_realized.update(pending_selectors)
             return
 
         if drv_path in self.local_allowlist:
@@ -627,13 +721,14 @@ class Realizer:
 
         self.say(f"cache-only dependency: {drv_path}")
         try:
-            self.nix.build(selectors, max_jobs=0)
+            self.nix.build(pending_selectors, max_jobs=0)
         except CommandError as exc:
             raise RealizeHomeError(
                 f"cache-only fetch failed for dependency {drv_path}, required by {parent}; "
                 "only reviewed local drvPaths may build locally\n"
                 f"{exc}"
             ) from exc
+        self._cache_realized.update(pending_selectors)
 
     def realize_local(
         self,
@@ -748,8 +843,7 @@ class Realizer:
         self.prepare_graph()
         self.prepare_cached_output_graph()
         assert self.graph is not None
-        for artifact in self.deployment.cached:
-            self.realize_cached(artifact)
+        self.realize_cached_batch()
         for artifact in self.local_artifacts:
             self.realize_local(artifact)
         return self.deployment.activation.path

@@ -80,6 +80,8 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - `dot setup karabiner` requires npm and an existing Karabiner configuration containing `Default profile`. It refuses to run anywhere but macOS. Changed profiles are backed up before an atomic write; identical reruns do not create another backup. Device settings and other profiles are preserved.
 - `dot setup nix` applies the repository's existing lock. It skips Nix installation when already present and only replaces cache settings when their contents change.
 - `dot update nix` prepares updated flake inputs and an OmniWM release pin in a temporary candidate, validates packages, then activates and retains the new pins. A failed candidate does not replace the repository's working pins.
+- Cache-only package outputs and external dependencies are fetched in batches so Nix can download them concurrently. Missing cache entries still fail without compiling packages; reviewed configuration generation and activation remain ordered.
+- Home Manager's `~/.nix-profile/bin` takes precedence over system Nix and native CLI installs on macOS and Linux. Keep Claude Code in Home Manager; remove older standalone entries rather than updating a second installation.
 - `dot update dot` uses Git's autostash while pulling, so a generated OmniWM pin or another local edit is reapplied after the repository update. If reapplying local edits causes conflicts, the command reports failure and leaves Git's recovery state intact.
 
 ## Apps

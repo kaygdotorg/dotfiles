@@ -38,6 +38,67 @@ class DotPathTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         return result
 
+    def zsh_path(self, ostype, inherited_path):
+        """Evaluate only zshrc's PATH setup with isolated profile directories."""
+        system_bin = self.root / "system nix" / "bin"
+        home_profile_bin = self.home / ".nix-profile" / "bin"
+        local_bin = self.home / ".local" / "bin"
+        for path in (system_bin, home_profile_bin, local_bin, *inherited_path):
+            path.mkdir(parents=True, exist_ok=True)
+
+        path_source = (REPO / "zsh/.zshrc").read_text()
+        path_source, marker, _ = path_source.partition("# Spicetify")
+        self.assertTrue(marker, "zshrc PATH block marker is missing")
+        path_source = path_source.replace(
+            "/nix/var/nix/profiles/default/bin", str(system_bin)
+        )
+        fixture = self.root / f"zsh-path-{ostype}.zsh"
+        fixture.write_text(path_source + 'print -r -- "DOT_PATH_RESULT=$PATH"\n')
+
+        environment = dict(
+            self.env,
+            PATH=os.pathsep.join(str(path) for path in inherited_path),
+            DOT_TEST_OSTYPE=ostype,
+            DOT_TEST_ZSHRC=str(fixture),
+        )
+        result = subprocess.run(
+            [
+                "/bin/zsh",
+                "-dfc",
+                'OSTYPE="$DOT_TEST_OSTYPE"; source "$DOT_TEST_ZSHRC"',
+            ],
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = next(
+            (line.removeprefix("DOT_PATH_RESULT=")
+             for line in result.stdout.splitlines()
+             if line.startswith("DOT_PATH_RESULT=")),
+            None,
+        )
+        self.assertIsNotNone(output, result.stdout)
+        return output.split(os.pathsep), system_bin, home_profile_bin, local_bin
+
+    def test_home_manager_profile_precedes_system_and_legacy_paths_on_both_oses(self):
+        inherited_path = (
+            self.root / "inherited one",
+            self.root / "inherited two",
+        )
+        for ostype in ("darwin-test", "linux-gnu"):
+            with self.subTest(ostype=ostype):
+                path, system_bin, home_profile_bin, local_bin = self.zsh_path(
+                    ostype, inherited_path
+                )
+                home_profile_index = path.index(str(home_profile_bin))
+                self.assertLess(home_profile_index, path.index(str(system_bin)))
+                self.assertLess(home_profile_index, path.index(str(local_bin)))
+                for inherited in inherited_path:
+                    self.assertIn(str(inherited), path)
+
     def test_invalid_dispatch_does_not_change_home(self):
         for args in ((), ("setup",), ("delete", "ssh"), ("setup", "unknown"), ("update", "ssh", "unexpected")):
             with self.subTest(args=args):

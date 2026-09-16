@@ -176,6 +176,203 @@ class RealizeHomeTests(unittest.TestCase):
         self.assertEqual([jobs for jobs, _ in nix.builds], [0])
         self.assertNotIn(1, [jobs for jobs, _ in nix.builds])
 
+    def test_cache_batch_deduplicates_cached_and_external_selectors(self) -> None:
+        cached = rh.Artifact(
+            "cached-tool",
+            "/nix/store/cached.drv",
+            ("/tmp/missing-cached",),
+        )
+        local = rh.Artifact("reviewed-wrapper", "/nix/store/local.drv", ())
+        graph = rh.DerivationGraph(
+            {
+                "/nix/store/activation.drv": node(
+                    "/nix/store/activation.drv",
+                    "/tmp/missing-activation",
+                    inputs={"/nix/store/external.drv": ["terminfo"]},
+                ),
+                local.drv_path: node(
+                    local.drv_path,
+                    "/tmp/missing-local",
+                    inputs={
+                        cached.drv_path: ["out"],
+                        "/nix/store/external.drv": ["terminfo"],
+                    },
+                ),
+                cached.drv_path: node(cached.drv_path, cached.outputs[0]),
+                "/nix/store/external.drv": rh.Derivation(
+                    "/nix/store/external.drv",
+                    {
+                        "outputs": {"out": {}, "terminfo": {}},
+                        "env": {
+                            "out": "/tmp/missing-external-out",
+                            "terminfo": "/tmp/missing-external-terminfo",
+                        },
+                    },
+                ),
+            }
+        )
+        nix = FakeNix(graph)
+        realizer = rh.Realizer(
+            deployment=deployment(
+                activation_path="/tmp/missing-activation",
+                cached=(cached,),
+                local=(local,),
+            ),
+            nix=nix,
+            output=io.StringIO(),
+        )
+
+        realizer.run()
+
+        self.assertEqual(
+            nix.builds,
+            [
+                (
+                    0,
+                    (
+                        "/nix/store/cached.drv^out",
+                        "/nix/store/external.drv^terminfo",
+                    ),
+                ),
+                (1, ("/nix/store/activation.drv^out",)),
+                (1, ("/nix/store/local.drv^out",)),
+            ],
+        )
+
+    def test_cache_batch_failure_prevents_local_builds(self) -> None:
+        cached = rh.Artifact("cached-tool", "/nix/store/cached.drv", ())
+        local = rh.Artifact("reviewed-wrapper", "/nix/store/local.drv", ())
+        graph = rh.DerivationGraph(
+            {
+                "/nix/store/activation.drv": node(
+                    "/nix/store/activation.drv",
+                    "/tmp/missing-activation",
+                ),
+                cached.drv_path: node(cached.drv_path, "/tmp/missing-cached"),
+                local.drv_path: node(
+                    local.drv_path,
+                    "/tmp/missing-local",
+                    inputs={"/nix/store/external.drv": ["out"]},
+                ),
+                "/nix/store/external.drv": node(
+                    "/nix/store/external.drv",
+                    "/tmp/missing-external",
+                ),
+            }
+        )
+        nix = FakeNix(graph, fail_cache=True)
+        realizer = rh.Realizer(
+            deployment=deployment(
+                activation_path="/tmp/missing-activation",
+                cached=(cached,),
+                local=(local,),
+            ),
+            nix=nix,
+            output=io.StringIO(),
+        )
+
+        with self.assertRaisesRegex(rh.RealizeHomeError, "cache-only fetch failed"):
+            realizer.run()
+
+        self.assertEqual([jobs for jobs, _ in nix.builds], [0])
+
+    def test_warm_local_outputs_do_not_require_external_frontier(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            activation_path = root / "activation"
+            local_path = root / "local"
+            activation_path.write_text("warm activation")
+            local_path.write_text("warm local")
+            local = rh.Artifact("warm-wrapper", "/nix/store/local.drv", ())
+            graph = rh.DerivationGraph(
+                {
+                    "/nix/store/activation.drv": node(
+                        "/nix/store/activation.drv",
+                        str(activation_path),
+                    ),
+                    local.drv_path: node(
+                        local.drv_path,
+                        str(local_path),
+                        inputs={"/nix/store/unsubstitutable.drv": ["out"]},
+                    ),
+                    "/nix/store/unsubstitutable.drv": node(
+                        "/nix/store/unsubstitutable.drv",
+                        str(root / "missing-dependency"),
+                    ),
+                }
+            )
+            nix = FakeNix(graph)
+            realizer = rh.Realizer(
+                deployment=deployment(
+                    activation_path=str(activation_path),
+                    local=(local,),
+                ),
+                nix=nix,
+                output=io.StringIO(),
+            )
+
+            realizer.run()
+
+        self.assertEqual(
+            nix.builds,
+            [
+                (0, ("/nix/store/activation.drv^out",)),
+                (0, ("/nix/store/local.drv^out",)),
+            ],
+        )
+
+    def test_cache_batch_failure_prevents_main_activation(self) -> None:
+        cached = rh.Artifact("cached-tool", "/nix/store/cached.drv", ())
+        local = rh.Artifact("reviewed-wrapper", "/nix/store/local.drv", ())
+        graph = rh.DerivationGraph(
+            {
+                "/nix/store/activation.drv": node(
+                    "/nix/store/activation.drv",
+                    "/tmp/missing-activation",
+                ),
+                cached.drv_path: node(cached.drv_path, "/tmp/missing-cached"),
+                local.drv_path: node(local.drv_path, "/tmp/missing-local"),
+            }
+        )
+
+        class BatchFailureNix(FakeNix):
+            def eval_deployment(self, flake: str, host: str) -> dict[str, Any]:
+                return {
+                    "system": rh.current_system(),
+                    "homeDirectory": os.environ["HOME"],
+                    "activation": {
+                        "drvPath": "/nix/store/activation.drv",
+                        "path": "/tmp/missing-activation",
+                    },
+                    "cached": [
+                        {
+                            "name": cached.name,
+                            "drvPath": cached.drv_path,
+                            "outputs": list(cached.outputs),
+                        }
+                    ],
+                    "local": [
+                        {
+                            "name": local.name,
+                            "drvPath": local.drv_path,
+                            "outputs": list(local.outputs),
+                        }
+                    ],
+                    "migration": {},
+                }
+
+        nix = BatchFailureNix(graph, fail_cache=True)
+        with patch.object(rh, "_activate_path") as activate:
+            result = rh.main(
+                ["--flake", "/tmp/flake", "--host", "kayg"],
+                nix=nix,
+                output=io.StringIO(),
+            )
+
+        self.assertEqual(result, 1)
+        activate.assert_not_called()
+        self.assertEqual([jobs for jobs, _ in nix.builds], [0])
+
     def test_missing_derivation_is_reported_as_cache_fetch_failure(self) -> None:
         cached = rh.Artifact("homeassistant-cli", "/nix/store/missing.drv", ("/tmp/missing",))
         graph = rh.DerivationGraph(
@@ -687,6 +884,7 @@ class RealizeHomeTests(unittest.TestCase):
                 ["/nix/store/first.drv^out", "/nix/store/second.drv^terminfo"],
                 max_jobs=0,
             )
+            nix.build(["/nix/store/third.drv^out"], max_jobs=0)
 
             self.assertEqual(len(calls), 2)
             links = []
@@ -697,7 +895,129 @@ class RealizeHomeTests(unittest.TestCase):
                 links.append(link)
                 self.assertEqual(link.parent, root)
                 self.assertTrue(link.is_symlink())
+            self.assertEqual(
+                calls[0][calls[0].index("--out-link") + 1],
+                str(root / "batch-0"),
+            )
+            self.assertEqual(
+                calls[0][-2:],
+                ["/nix/store/first.drv^out", "/nix/store/second.drv^terminfo"],
+            )
             self.assertNotEqual(links[0], links[1])
+
+    def test_nix_build_bounds_large_batches_and_keeps_prefixes_unique(self) -> None:
+        calls: list[list[str]] = []
+
+        def command(argv: Sequence[str], **_: Any) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            calls.append(args)
+            out_link = Path(args[args.index("--out-link") + 1])
+            out_link.symlink_to("/nix/store/fake-result")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        selectors = tuple(f"/nix/store/item-{index}.drv^out" for index in range(65))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "gc-roots"
+            nix = rh.Nix(runner=rh.CommandRunner(run=command), gc_root_dir=root)
+            nix.build(selectors, max_jobs=0)
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(
+            [Path(call[call.index("--out-link") + 1]).name for call in calls],
+            ["batch-0", "batch-1"],
+        )
+        self.assertEqual(
+            [selector for call in calls for selector in call if ".drv^" in selector],
+            list(selectors),
+        )
+
+    def test_cache_batch_roots_each_multi_output_link_until_activation(self) -> None:
+        cached = rh.Artifact(
+            "multi-output",
+            "/nix/store/multi.drv",
+            ("/tmp/missing-terminfo", "/tmp/missing-out"),
+        )
+        activation_drv = "/nix/store/activation.drv"
+        graph = rh.DerivationGraph(
+            {
+                activation_drv: node(activation_drv, "/tmp/missing-activation"),
+                cached.drv_path: rh.Derivation(
+                    cached.drv_path,
+                    {
+                        "outputs": {
+                            "out": {"path": "/tmp/missing-out"},
+                            "terminfo": {"path": "/tmp/missing-terminfo"},
+                        }
+                    },
+                ),
+            }
+        )
+
+        class RootNix(rh.Nix):
+            def __init__(self) -> None:
+                super().__init__(runner=rh.CommandRunner(run=self._command))
+                self.observed_links: tuple[str, ...] = ()
+
+            def _command(self, argv: Sequence[str], **_: Any) -> subprocess.CompletedProcess[str]:
+                args = list(argv)
+                if args[:2] == ["nix", "--version"]:
+                    return subprocess.CompletedProcess(args, 0, "nix (Determinate Nix) 2.35.2\n", "")
+                if args[:2] == ["nix", "build"]:
+                    prefix = Path(args[args.index("--out-link") + 1])
+                    selectors = [arg for arg in args if ".drv^" in arg]
+                    for index, selector in enumerate(selectors):
+                        _, output_name = selector.rsplit("^", 1)
+                        suffix = "" if index == 0 else f"-{index}"
+                        if output_name != "out":
+                            suffix += f"-{output_name}"
+                        link = Path(f"{prefix}{suffix}")
+                        link.symlink_to(f"/nix/store/fake-{index}")
+                return subprocess.CompletedProcess(args, 0, "", "")
+
+            def version(self) -> tuple[int, int, int]:
+                return (2, 35, 2)
+
+            def eval_deployment(self, flake: str, host: str) -> dict[str, Any]:
+                return {
+                    "system": rh.current_system(),
+                    "homeDirectory": os.environ["HOME"],
+                    "activation": {"drvPath": activation_drv, "path": "/tmp/missing-activation"},
+                    "cached": [
+                        {
+                            "name": cached.name,
+                            "drvPath": cached.drv_path,
+                            "outputs": list(cached.outputs),
+                        }
+                    ],
+                    "local": [],
+                    "migration": {},
+                }
+
+            def derivation_show(self, drv_paths: Sequence[str], recursive: bool = False) -> rh.DerivationGraph:
+                return graph
+
+        nix = RootNix()
+
+        def activate(path: str, runner: rh.CommandRunner) -> subprocess.CompletedProcess[str]:
+            self.assertIsNotNone(nix.gc_root_dir)
+            assert nix.gc_root_dir is not None
+            links = sorted(item.name for item in nix.gc_root_dir.iterdir() if item.is_symlink())
+            nix.observed_links = tuple(links)
+            return subprocess.CompletedProcess([str(Path(path) / "activate")], 0, "", "")
+
+        with patch.object(rh, "snapshot_profiles", return_value=rh.ProfileSnapshot(None, None, None, ())), patch.object(
+            rh, "_activate_path", side_effect=activate
+        ):
+            result = rh.main(
+                ["--flake", "/tmp/flake", "--host", "kayg"],
+                nix=nix,
+                output=io.StringIO(),
+            )
+
+        self.assertEqual(result, 0)
+        self.assertIn("batch-0-terminfo", nix.observed_links)
+        self.assertIn("batch-0-1", nix.observed_links)
+        self.assertIsNone(nix.gc_root_dir)
 
     def test_existing_dependency_hit_is_rooted_before_local_parent_build(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

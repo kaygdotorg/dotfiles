@@ -2,7 +2,7 @@
 # PATH Configuration
 # ============================================================================
 
-# Base PATH: user local binaries take precedence
+# Base PATH: seed user-local binaries before platform package-manager paths
 export PATH="${HOME}/.local/bin:${PATH}"
 
 # Package manager PATH - nix first, then brew (only where present). Homebrew's
@@ -19,9 +19,6 @@ case "${OSTYPE}" in
         if [[ -d "/nix/var/nix/profiles/default/bin" ]]; then
             export PATH="/nix/var/nix/profiles/default/bin:${PATH}"
         fi
-        if [[ -d "${HOME}/.nix-profile/bin" ]]; then
-            export PATH="${HOME}/.nix-profile/bin:${PATH}"
-        fi
         ;;
     *)
         # Nix - system-wide packages (installed via nix, shared by all users)
@@ -30,6 +27,11 @@ case "${OSTYPE}" in
         fi
         ;;
 esac
+
+# Home Manager packages take precedence over system Nix and legacy local bins.
+if [[ -d "${HOME}/.nix-profile/bin" ]]; then
+    export PATH="${HOME}/.nix-profile/bin:${PATH}"
+fi
 
 # Spicetify (Spotify CLI) - only if installed
 if [[ -d "${HOME}/.spicetify" ]]; then
