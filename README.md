@@ -109,7 +109,7 @@ The configurations are `kayg` and `kayg-mba` for Apple Silicon Macs, `kayg-linux
 
 ### Precompiled packages
 
-Claude Code, Codex, Antigravity CLI (`agy`), OMP, and `cli-proxy-api` come from `llm-agents.packages.${system}`, preserving Numtide's own nixpkgs pin so they match its binary cache. Codex and OMP are compiled by Numtide's CI; this machine must download the resulting packages. Ordinary tools use the nixpkgs binary cache. Packages installed separately by earlier versions of this setup are migrated only when both their names and recorded sources match the explicit migration list. Unknown profile entries are preserved.
+Claude Code, Codex, Antigravity CLI (`agy`), OMP, `cli-proxy-api`, and `code-review-graph` come from `llm-agents.packages.${system}`, preserving Numtide's own nixpkgs pin so they match its binary cache. Codex and OMP are compiled by Numtide's CI; this machine must download the resulting packages. Ordinary tools use the nixpkgs binary cache. Packages installed separately by earlier versions of this setup are migrated only when both their names and recorded sources match the explicit migration list. Unknown profile entries are preserved.
 
 The deployment helper evaluates `home-manager/deployment.nix`, including packages added by Home Manager modules. It requests external package outputs with local and remote builders disabled for that command. Missing cached packages stop the operation. This does **not** change the global `max-jobs` setting. It requires Nix 2.35 or newer for that command's scheduling behavior; an older installed Nix is reported rather than silently replaced.
 

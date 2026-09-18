@@ -1,6 +1,6 @@
 # Exact derivation identities accepted by nix/realize-home. Everything else
 # must already exist or be downloadable; package names are not a build permit.
-{ lib, home, wrappers }:
+{ lib, home, wrappers, vendorBinaries ? [ ] }:
 let
   config = home.config;
   pkgs = home.pkgs;
@@ -61,7 +61,11 @@ let
   ] ++ mimeDirs ++ lib.optionals isDarwin ([ fontLinks ] ++ agentFiles);
   # OmniWM downloads an already compiled ZIP through a fixed-output fetcher.
   downloads = lib.concatMap (p: lib.optional (lib.isDerivation (p.src or null)) p.src) wrappers;
-  localPackages = generated ++ wrappers ++ downloads;
+  # Vendor binaries (unfree, so never on the public cache) only fetch and
+  # unpack the vendor's own signed release. The package and its fixed-output
+  # source are the only build permits they get.
+  vendorDownloads = lib.concatMap (p: lib.optional (lib.isDerivation (p.src or null)) p.src) vendorBinaries;
+  localPackages = generated ++ wrappers ++ downloads ++ vendorBinaries ++ vendorDownloads;
   localIds = map (p: p.drvPath) localPackages ++ contextDrvs;
   migratedNixpkgs = {
     Normal-NF = "maple-mono.Normal-NF";

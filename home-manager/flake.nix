@@ -21,6 +21,16 @@
       systems = [ "aarch64-darwin" "x86_64-linux" "aarch64-linux" ];
       forSystems = lib.genAttrs systems;
       omniwm = nixpkgs.legacyPackages.aarch64-darwin.callPackage ./omniwm/package.nix { };
+      # 1Password CLI (`op`) is unfree. Allow exactly this one package instead
+      # of turning on allowUnfree for the whole package set. Agents use `op`
+      # with a service-account token to read and save secrets, so it must
+      # exist on every host. Unfree outputs are not on cache.nixos.org, so
+      # deployment.nix lists it as a reviewed local repackage (it only unpacks
+      # the vendor's signed binary).
+      onePasswordCliFor = system: (import nixpkgs {
+        inherit system;
+        config.allowUnfreePredicate = p: lib.getName p == "1password-cli";
+      })._1password-cli;
       mkHome = system: homeDir:
         let pkgs = nixpkgs.legacyPackages.${system};
         in home-manager.lib.homeManagerConfiguration {
@@ -28,6 +38,7 @@
           extraSpecialArgs = {
             inherit homeDir;
             llmPackages = llm-agents.packages.${system};
+            onePasswordCli = onePasswordCliFor system;
             appleFonts = if pkgs.stdenv.hostPlatform.isDarwin then apple-fonts.packages.${system} else null;
           };
           modules = [
@@ -56,6 +67,7 @@
         let system = home.pkgs.stdenv.hostPlatform.system;
         in import ./deployment.nix {
           inherit lib home;
+          vendorBinaries = [ (onePasswordCliFor system) ];
           wrappers = lib.optionals (system == "aarch64-darwin") (
             [ omniwm ] ++ (with apple-fonts.packages.${system}; [
               sf-pro sf-compact sf-mono sf-arabic sf-armenian sf-georgian sf-hebrew ny

@@ -1,4 +1,4 @@
-{ config, lib, pkgs, homeDir, appleFonts ? null, llmPackages, ... }:
+{ config, lib, pkgs, homeDir, appleFonts ? null, llmPackages, onePasswordCli, ... }:
 
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
@@ -64,7 +64,12 @@ in
     # console-only emacs on every platform: the terminal is the interface.
     # emacs-nox exists on both linux and darwin in nixpkgs-unstable.
     ++ [ pkgs.emacs-nox ]
-    ++ (with llmPackages; [ codex claude-code antigravity-cli omp cli-proxy-api ])
+    # code-review-graph comes from llm-agents (not nixpkgs) and is cached by
+    # Numtide for aarch64-darwin, x86_64-linux and aarch64-linux, so it
+    # installs without a local build. rtk is in nixpkgs and listed above.
+    ++ (with llmPackages; [ codex claude-code antigravity-cli omp cli-proxy-api code-review-graph ])
+    # 1Password CLI for secrets (see onePasswordCli in flake.nix).
+    ++ [ onePasswordCli ]
     # Apple fonts (base set) — darwin only. macOS already ships these
     # system-wide; installing via nix registers all faces for app font
     # pickers (rootshell/codex "System Default Font" rendering). The
