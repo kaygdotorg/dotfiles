@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, enableUpdate ? true, ... }:
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   updater = "${config.home.homeDirectory}/.local/bin/dotfiles-nix-update";
@@ -22,7 +22,10 @@ in {
     run mkdir -p ${lib.escapeShellArg logDir}
   '';
 
-  launchd.agents.dotfiles-nix-update = lib.mkIf isDarwin {
+  # The per-host update job is gated by the enableUpdate module arg so
+  # secondary user entries (e.g. aayushy-linux) share the package set without
+  # running their own daily update transaction.
+  launchd.agents.dotfiles-nix-update = lib.mkIf (isDarwin && enableUpdate) {
     enable = true;
     config = {
       # Keep this plist stable when nixpkgs changes: reloading the job
@@ -35,7 +38,7 @@ in {
     };
   };
 
-  systemd.user.services.dotfiles-nix-update = lib.mkIf (!isDarwin) {
+  systemd.user.services.dotfiles-nix-update = lib.mkIf (!isDarwin && enableUpdate) {
     Unit = {
       Description = "Update the dotfiles Home Manager configuration";
       # Activation must finish before a newly generated service is used.
@@ -48,7 +51,7 @@ in {
       TimeoutStartSec = "1h";
     };
   };
-  systemd.user.timers.dotfiles-nix-update = lib.mkIf (!isDarwin) {
+  systemd.user.timers.dotfiles-nix-update = lib.mkIf (!isDarwin && enableUpdate) {
     Unit.Description = "Daily dotfiles package update";
     Timer = {
       OnCalendar = "*-*-* 03:47:00 UTC";

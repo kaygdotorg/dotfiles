@@ -31,12 +31,12 @@
         inherit system;
         config.allowUnfreePredicate = p: lib.getName p == "1password-cli";
       })._1password-cli;
-      mkHome = system: homeDir:
+      mkHome = { system, homeDir, username, gitName, gitEmail, enableUpdate ? true }:
         let pkgs = nixpkgs.legacyPackages.${system};
         in home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
-            inherit homeDir;
+            inherit homeDir username gitName gitEmail enableUpdate;
             llmPackages = llm-agents.packages.${system};
             onePasswordCli = onePasswordCliFor system;
             appleFonts = if pkgs.stdenv.hostPlatform.isDarwin then apple-fonts.packages.${system} else null;
@@ -50,10 +50,13 @@
           ];
         };
       hosts = {
-        kayg = mkHome "aarch64-darwin" "/Users/kayg";
-        kayg-mba = mkHome "aarch64-darwin" "/Users/kayg";
-        kayg-linux = mkHome "x86_64-linux" "/home/kayg";
-        kayg-linux-arm = mkHome "aarch64-linux" "/home/kayg";
+        kayg = mkHome { system = "aarch64-darwin"; homeDir = "/Users/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
+        kayg-mba = mkHome { system = "aarch64-darwin"; homeDir = "/Users/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
+        kayg-linux = mkHome { system = "x86_64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
+        kayg-linux-arm = mkHome { system = "aarch64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
+        # Second human user on the agents server. Shares the package set but
+        # runs no daily updater (updates happen on demand from kayg's side).
+        aayushy-linux = mkHome { system = "x86_64-linux"; homeDir = "/home/aayushy"; username = "aayushy"; gitName = "Aayushy Swetapragyan"; gitEmail = "aayushy@kayg.org"; enableUpdate = false; };
       };
     in {
       homeConfigurations = hosts;

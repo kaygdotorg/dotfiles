@@ -1,12 +1,14 @@
-{ config, lib, pkgs, homeDir, appleFonts ? null, llmPackages, onePasswordCli, ... }:
+{ config, lib, pkgs, homeDir, username, gitName, gitEmail, enableUpdate ? true
+, appleFonts ? null, llmPackages, onePasswordCli, ... }:
 
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
 in
 {
-  # username is uniform; homeDirectory differs per platform and is supplied
-  # per-configuration as a module arg (homeDir) from flake.nix extraArgs.
-  home.username = "kayg";
+  # username, homeDirectory, and git identity are supplied per-configuration
+  # as module args (homeDir/username/gitName/gitEmail) from flake.nix
+  # extraSpecialArgs.
+  home.username = username;
   home.homeDirectory = homeDir;
 
   # Packages for BOTH macOS and Linux hosts.
@@ -101,12 +103,12 @@ in
   # same paths collides at activation ("would be clobbered") and would fork
   # the config. Packages that zsh needs are in home.packages above.
 
-  # git identity + sensible defaults
+  # git identity + sensible defaults (identity comes from the host entry)
   programs.git = {
     enable = true;
     settings = {
-      user.name = "kayg";
-      user.email = "mail@kayg.org";
+      user.name = gitName;
+      user.email = gitEmail;
       init.defaultBranch = "main";
       pull.rebase = true;
     };
