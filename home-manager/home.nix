@@ -1,5 +1,5 @@
 { config, lib, pkgs, homeDir, username, gitName, gitEmail, enableUpdate ? true
-, appleFonts ? null, llmPackages, onePasswordCli, ... }:
+, appleFonts ? null, llmPackages, llmExclude ? [], onePasswordCli, ... }:
 
 let
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
@@ -69,7 +69,11 @@ in
     # code-review-graph comes from llm-agents (not nixpkgs) and is cached by
     # Numtide for aarch64-darwin, x86_64-linux and aarch64-linux, so it
     # installs without a local build. rtk is in nixpkgs and listed above.
-    ++ (with llmPackages; [ codex claude-code antigravity-cli omp cli-proxy-api code-review-graph ])
+    ++ (with llmPackages; (
+         lib.filter (p: ! builtins.elem (p.pname or "") llmExclude) [
+           codex claude-code antigravity-cli omp cli-proxy-api code-review-graph
+         ]
+       ))
     # 1Password CLI for secrets (see onePasswordCli in flake.nix).
     ++ [ onePasswordCli ]
     # Apple fonts (base set) — darwin only. macOS already ships these
