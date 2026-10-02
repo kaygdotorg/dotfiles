@@ -31,7 +31,11 @@
         inherit system;
         config.allowUnfreePredicate = p: lib.getName p == "1password-cli";
       })._1password-cli;
-      mkHome = { system, homeDir, username, gitName, gitEmail, enableUpdate ? true, llmExclude ? [] }:
+      # llm-agents phase-out: codex + claude-code install via their official npm
+      # channels (they move faster than the flake re-exports them). Every host
+      # excludes both by default; pass llmExclude = [] to opt back in.
+      mkHome = { system, homeDir, username, gitName, gitEmail, enableUpdate ? true
+               , llmExclude ? [ "codex" "claude-code" ] }:
         let pkgs = nixpkgs.legacyPackages.${system};
         in home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
