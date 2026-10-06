@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom|atuin|ssh|karabiner|nix> [nix-options]"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom|atuin|ssh|ghostty|karabiner|nix> [nix-options]"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -709,6 +709,32 @@ update_ssh() {
     setup_ssh
 }
 
+# ghostty (macOS + iOS rootshell share the same config file)
+# Linking: ghostty/config.ghostty -> ~/.config/ghostty/config.ghostty
+# The app itself is not managed here: Ghostty ships for macOS as a signed app
+# bundle and rootshell (the iOS terminal) reads the same config path via its
+# own sync. This dispatcher only links the config file.
+ghostty_src="${repo_path}/ghostty"
+ghostty_dest="${HOME}/.config/ghostty"
+
+link_ghostty() {
+    printf '%s' "Creating ${ghostty_dest} directory"
+    run_cmd mkdir -p "${ghostty_dest}"
+
+    backup_if_real "${ghostty_dest}/config.ghostty"
+
+    printf '%s' "Linking Ghostty configuration"
+    run_cmd ln -sf "${ghostty_src}/config.ghostty" "${ghostty_dest}/config.ghostty"
+}
+
+setup_ghostty() {
+    link_ghostty
+}
+
+update_ghostty() {
+    link_ghostty
+}
+
 # karabiner (macOS only)
 # Generates: ~/.config/karabiner/karabiner.json (via writeToProfile)
 karabiner_src="${repo_path}/karabiner-ts"
@@ -779,7 +805,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|zsh|zellij|doom|atuin|ssh|karabiner|nix) ;;
+        dot|zsh|zellij|doom|atuin|ssh|ghostty|karabiner|nix) ;;
         *)
             usage
             exit 1
@@ -788,9 +814,10 @@ main() {
 
     # apps that must already exist as binaries; the rest are pure dotfile
     # managers or shell-level helpers. nix is exempt because `dot setup nix`
-    # is itself the installer for the Nix package manager.
+    # is itself the installer for the Nix package manager. ghostty is exempt
+    # because macOS ships it as an app bundle, not a PATH binary.
     case "${app}" in
-        dot|doom|karabiner|nix) ;;
+        dot|doom|ghostty|karabiner|nix) ;;
         *) check_if_installed_and_exit "${app}" ;;
     esac
 

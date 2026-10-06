@@ -43,6 +43,7 @@ dot setup zellij
 dot setup doom
 dot setup atuin
 dot setup ssh
+dot setup ghostty      # links ~/.config/ghostty/config.ghostty for Ghostty/rootshell
 dot setup karabiner    # macOS only; open Karabiner once and create "Default profile" first
 ```
 
@@ -63,7 +64,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI takes an action and an application. Nix setup also accepts `--yes` to authorize installing Nix when it is missing; existing installations are reused:
 
 ```bash
-dot <setup|update> <dot|zsh|zellij|doom|atuin|ssh|karabiner|nix>
+dot <setup|update> <dot|zsh|zellij|doom|atuin|ssh|ghostty|karabiner|nix>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -75,7 +76,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - `dot update zellij` never fetches a moving "latest" release. To upgrade a plugin, update its entry in `zellij/plugins.lock` (version, URL, sha256) after review, then rerun setup on each machine.
 - `dot setup doom` installs the Doom framework into `~/.config/emacs`, copies this repository's configuration into `~/.config/doom`, and synchronizes packages. Emacs must already be installed. Setup and update explicitly use those directories and accept Doom's installer prompts automatically. Use `doom doctor` to verify the environment.
 - `dot setup atuin` links an existing Atuin install into `~/.local/bin` and refreshes its config; the binary itself comes from Home Manager/Nix.
-- `dot setup dot`, `dot setup ssh`, and `dot setup karabiner` are symlink/generation-based and can be run repeatedly.
+- `dot setup dot`, `dot setup ssh`, `dot setup ghostty`, and `dot setup karabiner` are symlink- or generation-based and can be run repeatedly.
 - `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten. A dangling link or directory at that path causes an error before setup changes anything.
 - `dot setup karabiner` requires npm and an existing Karabiner configuration containing `Default profile`. It refuses to run anywhere but macOS. Changed profiles are backed up before an atomic write; identical reruns do not create another backup. Device settings and other profiles are preserved.
 - `dot setup nix` applies the repository's existing lock. It skips Nix installation when already present and only replaces cache settings when their contents change.
@@ -91,6 +92,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - **Doom Emacs** — Doom configuration copied into `~/.config/doom`; Emacs itself is a Home Manager package.
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
 - **SSH** — Managed SSH client configuration, tuned for mobile links (keepalives, connection multiplexing), with machine-local hosts kept out of the repository in `~/.ssh/config.local`.
+- **Ghostty** — Terminal configuration (75% opaque Liquid Glass background, Maple Mono NF at 18pt, quick-terminal drop-down) linked to `~/.config/ghostty/config.ghostty`, which the macOS Ghostty app and rootshell on iOS both read. The app itself is not installed by `dot`: Ghostty ships as a signed app bundle for macOS.
 - **Karabiner** — Advanced keyboard customization via [karabiner.ts](https://github.com/evan-liu/karabiner.ts) with Colemak-DH layout and hyper key layers.
 - **Home Manager / Nix** — User package management for every machine. The shared flake lives in `home-manager/`; `dot setup nix` selects the macOS or Linux host configuration and enables its daily update.
 
@@ -176,6 +178,7 @@ graph LR
         E["atuin/config.toml"]
         F[".ssh/config"]
         F2[".ssh/config.local.example"]
+        I["ghostty/config.ghostty"]
         G["karabiner-ts/index.ts"]
         H["scripts/dot"]
         X["doom-emacs/"]
@@ -191,6 +194,7 @@ graph LR
         E1["~/.config/atuin/config.toml"]
         F1["~/.ssh/config"]
         F21["~/.ssh/config.local"]
+        I1["~/.config/ghostty/config.ghostty"]
         G1["~/.config/karabiner/karabiner.json"]
         H1["~/.local/bin/dot"]
         X1["~/.config/doom"]
@@ -205,6 +209,7 @@ graph LR
     E -->|symlink| E1
     F -->|symlink| F1
     F2 -->|copy once| F21
+    I -->|symlink| I1
     G -->|generates| G1
     H -->|symlink| H1
     X -->|copy| X1
