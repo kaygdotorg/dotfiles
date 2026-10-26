@@ -38,6 +38,7 @@ export PATH="${HOME}/.nix-profile/bin:${PATH}"
 dot setup zsh
 dot setup tmux
 dot setup atuin
+dot setup agents
 dot setup ssh
 dot setup karabiner    # macOS only; open Karabiner once and create "Default profile" first
 ```
@@ -61,6 +62,7 @@ From the existing checkout (or using its installed `dot` command):
 ```bash
 dot update dot        # pull this repository
 dot setup dot
+dot setup agents     # install native agents before removing old Nix copies
 dot setup nix         # apply the current lock; installs tmux, removes managed Zellij/Emacs
 export PATH="${HOME}/.nix-profile/bin:${HOME}/.local/bin:${PATH}"
 dot setup tmux
@@ -100,7 +102,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI takes an action and an application. Nix setup also accepts `--yes` to authorize installing Nix when it is missing; existing installations are reused:
 
 ```bash
-dot <setup|update> <dot|zsh|tmux|atuin|ssh|karabiner|nix>
+dot <setup|update> <dot|zsh|tmux|atuin|agents|ssh|karabiner|nix>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -115,7 +117,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - `dot setup nix` applies the repository's existing lock. It skips Nix installation when already present and only replaces cache settings when their contents change.
 - `dot update nix` prepares updated flake inputs and an OmniWM release pin in a temporary candidate, validates packages, then activates and retains the new pins. A failed candidate does not replace the repository's working pins.
 - Cache-only package outputs and external dependencies are fetched in batches so Nix can download them concurrently. Missing cache entries still fail without compiling packages; reviewed configuration generation and activation remain ordered.
-- Home Manager's `~/.nix-profile/bin` takes precedence over system Nix and native CLI installs on macOS and Linux. Keep Claude Code in Home Manager; remove older standalone entries rather than updating a second installation.
+- Home Manager's `~/.nix-profile/bin` takes precedence over system Nix and native CLI installs on macOS and Linux. Claude Code, Codex, and agy use the official native installers in `~/.local/bin`; Home Manager does not install agent binaries.
 - `dot update dot` uses Git's autostash while pulling, so a generated OmniWM pin or another local edit is reapplied after the repository update. If reapplying local edits causes conflicts, the command reports failure and leaves Git's recovery state intact.
 
 ## Apps
@@ -135,7 +137,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 `dot setup nix` performs these steps in order:
 
 1. Detect the OS, architecture, and existing Nix executable. Install Determinate Nix only when Nix is missing. On macOS, download `Determinate.pkg`, verify its Gatekeeper assessment and Determinate signing team, then run `/usr/sbin/installer` through sudo. On Linux, download and run the shell installer as separate commands. Installation requires a terminal confirmation or explicit `--yes`; a missing terminal is never treated as consent.
-2. Install the tracked `nix/cache.conf` as a root-owned `/etc/nix/dotfiles-cache.conf`. Add its include to Determinate's `/etc/nix/nix.custom.conf` (or standard Nix's `/etc/nix/nix.conf`), preserving other settings. Reload the installed daemon only when necessary. No global build settings are changed.
+2. Install the tracked `nix/cache.conf` as a root-owned `/etc/nix/dotfiles-cache.conf`. Add its include to Determinate's `/etc/nix/nix.custom.conf` (or standard Nix's `/etc/nix/nix.conf`), preserving other settings. The managed snippet clears the former agent cache settings; Nix uses its existing default caches. Reload the installed daemon only when necessary. No global build settings are changed.
 3. Link `~/.local/bin/dotfiles-nix-update` to this checkout's shared updater. Apply the already locked Home Manager configuration for the host.
 4. Retire the previous updater units after successful activation. Home Manager owns the replacement launchd agent or systemd user timer.
 
@@ -143,9 +145,49 @@ Re-running setup converges the same configuration. It does not reinstall Nix, re
 
 The configurations are `kayg` and `kayg-mba` for Apple Silicon Macs, `kayg-linux` for x86_64 Linux, and `kayg-linux-arm` for ARM Linux. Other architectures fail with an explanation before setup changes anything. All hosts currently use the username `kayg`.
 
+### Agent CLIs
+
+```bash
+dot setup agents     # install missing native Claude Code, Codex, and agy
+dot update agents    # update all three, installing any that are missing
+```
+
+These commands run as your normal user on macOS and Linux. They install to
+`~/.local/bin`, download installer scripts before executing them, and stop on
+a failed download, install, or update. Setup reuses existing user-local
+executables and replaces local symlinks into the immutable Nix store without
+changing their targets. Update explicitly runs the user-local binaries.
+
+| Tool | Official installation | Explicit update |
+| --- | --- | --- |
+| Claude Code | `https://claude.ai/install.sh` with Bash | `~/.local/bin/claude update` |
+| Codex | `https://chatgpt.com/codex/install.sh` with sh | Rerun the same installer |
+| Antigravity CLI (`agy`) | `https://antigravity.google/cli/install.sh` with Bash | `~/.local/bin/agy update` |
+
+Sources: [Claude Code](https://github.com/anthropics/claude-code#installation),
+[Codex CLI](https://developers.openai.com/codex/cli/),
+[Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli).
+Sign in with each CLI after installation; `dot` does not manage credentials.
+
+When migrating an existing host, run `dot setup agents` **before** `dot setup
+nix` so the native executables are installed before the old managed packages
+are removed. Applying the new Home Manager configuration retires the old Nix
+agent packages and OMP/CLIProxyAPI/code-review-graph. Native agents then resolve
+from `~/.local/bin`. The daily Nix updater updates Nix packages only; agent
+updates use their own upstream behavior and `dot update agents`.
+
 ### Precompiled packages
 
-Claude Code, Codex, Antigravity CLI (`agy`), OMP, `cli-proxy-api`, and `code-review-graph` come from `llm-agents.packages.${system}`, preserving Numtide's own nixpkgs pin so they match its binary cache. Codex and OMP are compiled by Numtide's CI; this machine must download the resulting packages. Ordinary tools use the nixpkgs binary cache. Packages installed separately by earlier versions of this setup are migrated only when both their names and recorded sources match the explicit migration list. The known standalone nixpkgs `_1password-cli` and `yq-go` entries are migrated to Home Manager when their names, attributes, and sources match exactly. Unknown profile entries are preserved.
+Ordinary tools come from the nixpkgs binary cache. Agent CLIs are installed
+outside Nix using `dot setup agents` and `dot update agents`. OMP (the agent),
+CLIProxyAPI, and code-review-graph are retired. Oh My Posh remains the shell
+prompt. No agent flake dependency remains in the lockfile.
+
+Packages installed separately by earlier versions are migrated only when their
+profile names, Nix attributes, and original source URLs match the explicit
+migration list. This includes standalone nixpkgs `_1password-cli` and `yq-go`,
+and known legacy agent/tool entries from the old flake. Unrelated packages
+are preserved.
 
 The deployment helper evaluates `home-manager/deployment.nix`, including packages added by Home Manager modules. It requests external package outputs with local and remote builders disabled for that command. Missing cached packages stop the operation. This does **not** change the global `max-jobs` setting. It requires Nix 2.35 or newer for that command's scheduling behavior; an older installed Nix is reported rather than silently replaced.
 

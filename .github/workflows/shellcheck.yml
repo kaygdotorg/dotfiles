@@ -27,7 +27,7 @@ jobs:
       - name: Lint shell scripts
         # Dynamic dispatch and sourced helpers look unused to static analysis.
         run: |
-          shellcheck --shell=bash --exclude=SC2317,SC2329 scripts/dot scripts/lib/nix.sh nix/install-cache nix/nix-unstable-update nix/realize-home
+          shellcheck --shell=bash --exclude=SC2317,SC2329 scripts/dot scripts/lib/nix.sh scripts/lib/agents.sh nix/install-cache nix/nix-unstable-update nix/realize-home
           shellcheck --shell=sh tmux/*.sh
           bash -n scripts/dot
           bash -n scripts/lib/nix.sh
@@ -37,9 +37,9 @@ jobs:
       - name: Check command dispatch
         run: |
           status=0
-          for app in dot zsh tmux atuin ssh karabiner nix; do
+          for app in dot zsh tmux atuin agents ssh karabiner nix; do
             for action in setup update; do
-              if ! grep -q "^${action}_${app}()" scripts/dot scripts/lib/nix.sh; then
+              if ! grep -q "^${action}_${app}()" scripts/dot scripts/lib/nix.sh scripts/lib/agents.sh; then
                 echo "missing function: ${action}_${app}()"
                 status=1
               fi

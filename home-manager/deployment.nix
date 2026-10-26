@@ -111,7 +111,7 @@ assert lib.assertMsg (builtins.all (p:
   migration = lib.mapAttrs (_: attr: {
     attrPath = "legacyPackages.${system}.${attr}";
     originalUrls = [ "github:NixOS/nixpkgs/nixpkgs-unstable" "flake:nixpkgs" ];
-  }) migratedNixpkgs // lib.genAttrs [ "claude-code" "cli-proxy-api" ] (name: {
+  }) migratedNixpkgs // lib.genAttrs [ "claude-code" "codex" "antigravity-cli" "omp" "cli-proxy-api" "code-review-graph" ] (name: {
     attrPath = "packages.${system}.${name}";
     originalUrls = [ "github:numtide/llm-agents.nix" ];
   });

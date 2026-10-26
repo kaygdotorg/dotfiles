@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the repository's Numtide cache configuration.
+# Install the repository's Managed binary cache configuration.
 #
 # This is a small standalone entry point for hosts that already have Nix. The
 # bootstrap calls the same dot_nix_install_cache function directly so it can

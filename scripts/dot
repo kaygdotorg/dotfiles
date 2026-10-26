@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|tmux|atuin|ssh|karabiner|nix> [nix-options]"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|tmux|atuin|agents|ssh|karabiner|nix> [nix-options]"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -136,6 +136,19 @@ update_dot() {
         printf '%s\n' "Inspect 'git status' and 'git stash list', then resolve the conflicts manually." >&2
         exit 1
     fi
+}
+
+# agents (official native installers, independent of Home Manager)
+setup_agents() {
+    # shellcheck source=scripts/lib/agents.sh
+    source "${script_path}/lib/agents.sh"
+    agents_manage setup
+}
+
+update_agents() {
+    # shellcheck source=scripts/lib/agents.sh
+    source "${script_path}/lib/agents.sh"
+    agents_manage update
 }
 
 # tmux
@@ -491,7 +504,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|zsh|tmux|atuin|ssh|karabiner|nix) ;;
+        dot|zsh|tmux|atuin|agents|ssh|karabiner|nix) ;;
         *)
             usage
             exit 1
@@ -502,7 +515,7 @@ main() {
     # managers or shell-level helpers. nix is exempt because `dot setup nix`
     # is itself the installer for the Nix package manager.
     case "${app}" in
-        dot|karabiner|nix) ;;
+        dot|agents|karabiner|nix) ;;
         *) check_if_installed_and_exit "${app}" ;;
     esac
 

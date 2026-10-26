@@ -7,15 +7,13 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Preserve Numtide's own dependency pins to match its binary cache.
-    llm-agents.url = "github:numtide/llm-agents.nix";
     apple-fonts = {
       url = "github:Lyndeno/apple-fonts.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, llm-agents, apple-fonts, ... }:
+  outputs = { self, nixpkgs, home-manager, apple-fonts, ... }:
     let
       lib = nixpkgs.lib;
       systems = [ "aarch64-darwin" "x86_64-linux" "aarch64-linux" ];
@@ -31,17 +29,12 @@
         inherit system;
         config.allowUnfreePredicate = p: lib.getName p == "1password-cli";
       })._1password-cli;
-      # llm-agents phase-out: codex + claude-code install via their official npm
-      # channels (they move faster than the flake re-exports them). Every host
-      # excludes both by default; pass llmExclude = [] to opt back in.
-      mkHome = { system, homeDir, username, gitName, gitEmail, enableUpdate ? true
-               , llmExclude ? [ "codex" "claude-code" ] }:
+      mkHome = { system, homeDir, username, gitName, gitEmail, enableUpdate ? true }:
         let pkgs = nixpkgs.legacyPackages.${system};
         in home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
-            inherit homeDir username gitName gitEmail enableUpdate llmExclude;
-            llmPackages = builtins.removeAttrs llm-agents.packages.${system} llmExclude;
+            inherit homeDir username gitName gitEmail enableUpdate;
             onePasswordCli = onePasswordCliFor system;
             appleFonts = if pkgs.stdenv.hostPlatform.isDarwin then apple-fonts.packages.${system} else null;
           };
@@ -57,9 +50,8 @@
         kayg = mkHome { system = "aarch64-darwin"; homeDir = "/Users/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
         kayg-mba = mkHome { system = "aarch64-darwin"; homeDir = "/Users/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
         kayg-linux = mkHome { system = "x86_64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
-# Dev VM: codex + claude-code come from the official npm channel instead.
-        kayg-linux-dev = mkHome { system = "x86_64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; llmExclude = [ "codex" "claude-code" ]; };
-                kayg-linux-arm = mkHome { system = "aarch64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
+        kayg-linux-dev = mkHome { system = "x86_64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
+        kayg-linux-arm = mkHome { system = "aarch64-linux"; homeDir = "/home/kayg"; username = "kayg"; gitName = "kayg"; gitEmail = "mail@kayg.org"; };
         # Second human user on the agents server. Shares the package set but
         # runs no daily updater (updates happen on demand from kayg's side).
         aayushy-linux = mkHome { system = "x86_64-linux"; homeDir = "/home/aayushy"; username = "aayushy"; gitName = "Aayushy Swetapragyan"; gitEmail = "aayushy@kayg.org"; enableUpdate = false; };

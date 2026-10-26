@@ -5,7 +5,7 @@
 # The bootstrap is deliberately small and convergent:
 #
 #   1. Validate the host and find an existing Nix installation.
-#   2. Install Nix only when it is missing, then configure the Numtide cache.
+#   2. Install Nix only when it is missing, then reconcile managed cache settings.
 #   3. Point the Home Manager updater at this checkout and apply the locked
 #      configuration with `nix-unstable-update --setup`.
 #   4. Run the updater's read-only check and verify the Nix binary.
@@ -407,7 +407,7 @@ wizard_install_nix() {
 }
 
 # -----------------------------------------------------------------------------
-# Numtide cache configuration
+# Managed binary cache configuration
 # -----------------------------------------------------------------------------
 
 wizard_cache_config_path() {
@@ -818,7 +818,7 @@ dot_nix_main() {
     wizard_require_supported_nix
     wizard_prepare_nix_path
 
-    printf '%s\n' "Step 2/4: Configuring the Numtide binary cache"
+    printf '%s\n' "Step 2/4: Reconciling managed binary cache settings"
     dot_nix_install_cache
 
     printf '%s\n' "Step 3/4: Applying the locked Home Manager configuration"

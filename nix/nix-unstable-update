@@ -596,7 +596,7 @@ if [ "${mode}" = update ]; then
     fi
 
     # Let Nix update the candidate's graph as-is. No nested input is forced
-    # with --override-input, so follows such as Numtide's remain declared by
+    # with --override-input, so input follows relationships remain declared by
     # the flake rather than being rewritten by this updater.
     "${nix_bin}" flake update --option allow-import-from-derivation false --flake "${candidate_ref}"
 fi

@@ -19,6 +19,9 @@ module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 flake = f"path:{repo}/home-manager"
+lock = json.loads((repo / "home-manager/flake.lock").read_text())
+assert "llm-agents" not in lock["nodes"]["root"]["inputs"], "agent flake dependency must be absent"
+assert not any("llm-agents" in node.get("original", {}).get("repo", "") for node in lock["nodes"].values())
 
 def evaluate(attr):
     return json.loads(subprocess.check_output([
@@ -54,6 +57,11 @@ for host in ("kayg", "kayg-mba", "kayg-linux", "kayg-linux-arm"):
         "--apply", "packages: map (p: p.pname or p.name) packages",
     ], text=True))
     assert "yq-go" in package_names and "yq" not in package_names, "use the Go yq implementation"
+    assert not set(package_names) & {
+        "codex", "claude-code", "antigravity-cli", "omp", "cli-proxy-api", "code-review-graph"
+    }, "agents and retired tools must not be Home Manager packages"
+    assert "oh-my-posh" in package_names, "preserve the shell prompt"
+
     if deployment.system.endswith("-linux"):
         method = evaluate(f"homeConfigurations.{host}.config.systemd.user.services.dotfiles-nix-update.Unit.X-SwitchMethod")
         assert method == "keep-old", "activation would terminate its own Linux updater"

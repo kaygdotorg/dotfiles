@@ -253,9 +253,9 @@ assert_file_not_contains 'flake' "${CASE_ROOT}/home/nix.log"
 [ -L "${CASE_ROOT}/home/.local/bin/dotfiles-nix-update" ] || fail 'updater link missing'
 expected_helper="$(cd "${CASE_ROOT}/repo/nix" && pwd -P)/nix-unstable-update"
 assert_equal "${expected_helper}" "$(readlink "${CASE_ROOT}/home/.local/bin/dotfiles-nix-update")"
-assert_file_contains 'https://cache.numtide.com' "${CASE_ROOT}/etc/nix/dotfiles-cache.conf"
-assert_file_contains 'extra-trusted-substituters = https://cache.numtide.com' "${CASE_ROOT}/etc/nix/dotfiles-cache.conf"
-assert_file_contains 'niks3.numtide.com-1:' "${CASE_ROOT}/etc/nix/dotfiles-cache.conf"
+assert_file_not_contains 'cache.numtide.com' "${CASE_ROOT}/etc/nix/dotfiles-cache.conf"
+assert_file_not_contains 'extra-trusted-public-keys' "${CASE_ROOT}/etc/nix/dotfiles-cache.conf"
+cmp "${CASE_ROOT}/repo/nix/cache.conf" "${CASE_ROOT}/etc/nix/dotfiles-cache.conf" || fail 'managed cache settings differ'
 assert_file_contains '!include ' "${CASE_ROOT}/etc/nix/nix.conf"
 first_sudo_lines="$(wc -l < "${CASE_ROOT}/home/sudo.log")"
 run_bootstrap "${CASE_ROOT}/repo" "${CASE_ROOT}/home" "${CASE_ROOT}/etc/nix" "${CASE_ROOT}/bin" > "${CASE_ROOT}/second-output"
