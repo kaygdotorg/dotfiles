@@ -68,6 +68,9 @@ let
   localPackages = generated ++ wrappers ++ downloads ++ vendorBinaries ++ vendorDownloads;
   localIds = map (p: p.drvPath) localPackages ++ contextDrvs;
   migratedNixpkgs = {
+    # Adopt only the known standalone nixpkgs 1Password profile entry.
+    _1password-cli = "_1password-cli";
+    yq-go = "yq-go";
     Normal-NF = "maple-mono.Normal-NF";
     # Retire legacy standalone installs; Caddy is no longer a managed package.
     caddy = "caddy";

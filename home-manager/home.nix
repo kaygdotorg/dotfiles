@@ -27,7 +27,7 @@ in
       ripgrep
       fzf
       jq
-      yq
+      yq-go
       delta
 
       # dev tooling
@@ -55,12 +55,8 @@ in
       # media / misc
       ffmpeg
 
-      # ghostty terminfo (no UI needed here; just the terminfo so
-      # xterm-ghostty TERM works over ssh from ghostty terminals). The attr
-      # source differs by platform: linux builds ghostty from source
-      # (pkgs.ghostty), darwin uses the official dmg wrapper
-      # (pkgs.ghostty-bin) — pkgs.ghostty refuses to evaluate on darwin
-      # (meta.platforms = linux only).
+      # Rootshell uses libghostty's xterm-ghostty terminal type. Keep only its
+      # terminfo data for SSH sessions; no terminal GUI or app config is managed.
     ]
     ++ [ (if isDarwin then pkgs.ghostty-bin.terminfo else pkgs.ghostty.terminfo) ]
     # code-review-graph comes from llm-agents (not nixpkgs) and is cached by

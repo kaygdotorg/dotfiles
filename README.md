@@ -39,7 +39,6 @@ dot setup zsh
 dot setup tmux
 dot setup atuin
 dot setup ssh
-dot setup ghostty      # links ~/.config/ghostty/config.ghostty for Ghostty/rootshell
 dot setup karabiner    # macOS only; open Karabiner once and create "Default profile" first
 ```
 
@@ -49,7 +48,7 @@ is downloaded or run. Apple Silicon Macs other than hostname `mba` select the
 requires user `kayg`, home `/Users/kayg` on macOS or `/home/kayg` on Linux, and
 Nix 2.35 or newer. Git (Apple Command Line Tools on macOS) is needed to clone.
 
-On macOS, Ghostty and Karabiner apps are separate installations. Only run
+On macOS, Karabiner is a separate application installation. Only run
 `dot setup karabiner` after installing Karabiner and creating `Default profile`.
 After setup, open a fresh terminal. In tmux, **Ctrl+T then Shift+I** installs
 its configured plugins. Atuin authentication/sync is a separate step:
@@ -68,7 +67,6 @@ dot setup tmux
 dot setup zsh
 dot setup atuin
 dot setup ssh
-dot setup ghostty     # on hosts using Ghostty/rootshell
 # macOS with Karabiner already installed:
 dot setup karabiner
 ```
@@ -102,7 +100,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI takes an action and an application. Nix setup also accepts `--yes` to authorize installing Nix when it is missing; existing installations are reused:
 
 ```bash
-dot <setup|update> <dot|zsh|tmux|atuin|ssh|ghostty|karabiner|nix>
+dot <setup|update> <dot|zsh|tmux|atuin|ssh|karabiner|nix>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -111,7 +109,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 
 - `dot setup zsh` reuses valid plugin checkouts and rejects incomplete or unrelated plugin directories before changing shell configuration. `dot update zsh` pulls plugin changes; Nix manages the Zsh support binaries.
 - `dot setup atuin` links an existing Atuin install into `~/.local/bin` and refreshes its config; the binary itself comes from Home Manager/Nix.
-- `dot setup dot`, `dot setup ssh`, `dot setup ghostty`, and `dot setup karabiner` are symlink- or generation-based and can be run repeatedly.
+- `dot setup dot`, `dot setup ssh`, and `dot setup karabiner` are symlink- or generation-based and can be run repeatedly.
 - `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten. A dangling link or directory at that path causes an error before setup changes anything.
 - `dot setup karabiner` requires npm and an existing Karabiner configuration containing `Default profile`. It refuses to run anywhere but macOS. Changed profiles are backed up before an atomic write; identical reruns do not create another backup. Device settings and other profiles are preserved.
 - `dot setup nix` applies the repository's existing lock. It skips Nix installation when already present and only replaces cache settings when their contents change.
@@ -127,7 +125,8 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 - **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, OSC 133 semantic-prompt marks, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
 - **SSH** — Managed SSH client configuration, tuned for mobile links (keepalives, connection multiplexing), with machine-local hosts kept out of the repository in `~/.ssh/config.local`.
-- **Ghostty** — Terminal configuration (75% opaque Liquid Glass background, Maple Mono NF at 18pt, quick-terminal drop-down) linked to `~/.config/ghostty/config.ghostty`, which the macOS Ghostty app and rootshell on iOS both read. The app itself is not installed by `dot`: Ghostty ships as a signed app bundle for macOS.
+- **yq** — The Go implementation (`yq-go`), managed by Home Manager.
+- **Rootshell compatibility** — Hosts retain `xterm-ghostty` terminfo for Rootshell SSH sessions. No Ghostty app configuration is deployed.
 - **Karabiner** — Advanced keyboard customization via [karabiner.ts](https://github.com/evan-liu/karabiner.ts) with Colemak-DH layout and hyper key layers.
 - **Home Manager / Nix** — User package management for every machine. The shared flake lives in `home-manager/`; `dot setup nix` selects the macOS or Linux host configuration and enables its daily update.
 
@@ -146,7 +145,7 @@ The configurations are `kayg` and `kayg-mba` for Apple Silicon Macs, `kayg-linux
 
 ### Precompiled packages
 
-Claude Code, Codex, Antigravity CLI (`agy`), OMP, `cli-proxy-api`, and `code-review-graph` come from `llm-agents.packages.${system}`, preserving Numtide's own nixpkgs pin so they match its binary cache. Codex and OMP are compiled by Numtide's CI; this machine must download the resulting packages. Ordinary tools use the nixpkgs binary cache. Packages installed separately by earlier versions of this setup are migrated only when both their names and recorded sources match the explicit migration list. Unknown profile entries are preserved.
+Claude Code, Codex, Antigravity CLI (`agy`), OMP, `cli-proxy-api`, and `code-review-graph` come from `llm-agents.packages.${system}`, preserving Numtide's own nixpkgs pin so they match its binary cache. Codex and OMP are compiled by Numtide's CI; this machine must download the resulting packages. Ordinary tools use the nixpkgs binary cache. Packages installed separately by earlier versions of this setup are migrated only when both their names and recorded sources match the explicit migration list. The known standalone nixpkgs `_1password-cli` and `yq-go` entries are migrated to Home Manager when their names, attributes, and sources match exactly. Unknown profile entries are preserved.
 
 The deployment helper evaluates `home-manager/deployment.nix`, including packages added by Home Manager modules. It requests external package outputs with local and remote builders disabled for that command. Missing cached packages stop the operation. This does **not** change the global `max-jobs` setting. It requires Nix 2.35 or newer for that command's scheduling behavior; an older installed Nix is reported rather than silently replaced.
 
@@ -207,7 +206,6 @@ graph LR
         E["atuin/config.toml"]
         F[".ssh/config"]
         F2[".ssh/config.local.example"]
-        I["ghostty/config.ghostty"]
         G["karabiner-ts/index.ts"]
         H["scripts/dot"]
     end
@@ -220,7 +218,6 @@ graph LR
         E1["~/.config/atuin/config.toml"]
         F1["~/.ssh/config"]
         F21["~/.ssh/config.local"]
-        I1["~/.config/ghostty/config.ghostty"]
         G1["~/.config/karabiner/karabiner.json"]
         H1["~/.local/bin/dot"]
     end
@@ -232,7 +229,6 @@ graph LR
     E -->|symlink| E1
     F -->|symlink| F1
     F2 -->|copy once| F21
-    I -->|symlink| I1
     G -->|generates| G1
     H -->|symlink| H1
 ```

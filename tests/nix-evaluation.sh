@@ -6,6 +6,7 @@ nix flake check --all-systems --no-build --no-write-lock-file \
     --option allow-import-from-derivation false "path:${repo_dir}/home-manager"
 python3 - "${repo_dir}" <<'PYTHON'
 import importlib.util
+import io
 import json
 from pathlib import Path
 import re
@@ -27,6 +28,32 @@ def evaluate(attr):
 
 for host in ("kayg", "kayg-mba", "kayg-linux", "kayg-linux-arm"):
     deployment = module.parse_deployment(evaluate(f"deployment.{host}"))
+    # The real migration manifest must adopt the old standalone 1Password
+    # entry only when both its nixpkgs attribute and source match exactly.
+    op_entry = {
+        "name": "_1password-cli",
+        "attrPath": f"legacyPackages.{deployment.system}._1password-cli",
+        "originalUrl": "flake:nixpkgs",
+    }
+    assert module.migration_removals(deployment.migration, [op_entry], report=io.StringIO()) == ("_1password-cli",)
+    assert not module.migration_removals(
+        deployment.migration, [dict(op_entry, originalUrl="other-flake")], report=io.StringIO()
+    ), "unrelated 1Password install must be preserved"
+    yq_entry = {
+        "name": "yq-go",
+        "attrPath": f"legacyPackages.{deployment.system}.yq-go",
+        "originalUrl": "flake:nixpkgs",
+    }
+    assert module.migration_removals(deployment.migration, [yq_entry], report=io.StringIO()) == ("yq-go",)
+    assert not module.migration_removals(
+        deployment.migration, [dict(yq_entry, originalUrl="other-flake")], report=io.StringIO()
+    ), "unrelated yq install must be preserved"
+    package_names = json.loads(subprocess.check_output([
+        "nix", "eval", "--json", "--no-write-lock-file",
+        f"{flake}#homeConfigurations.{host}.config.home.packages",
+        "--apply", "packages: map (p: p.pname or p.name) packages",
+    ], text=True))
+    assert "yq-go" in package_names and "yq" not in package_names, "use the Go yq implementation"
     if deployment.system.endswith("-linux"):
         method = evaluate(f"homeConfigurations.{host}.config.systemd.user.services.dotfiles-nix-update.Unit.X-SwitchMethod")
         assert method == "keep-old", "activation would terminate its own Linux updater"
