@@ -52,41 +52,39 @@ if command -v go 2>/dev/null 1>&2; then
 fi
 
 # ============================================================================
-# Interactive login: open the Zellij session manager, then keep zsh alive
+# SAFETY: nested multiplexer check + auto-start (tmux)
 # ============================================================================
-# Zellij's built-in welcome layout is an ephemeral session picker. It lists
-# active and resurrectable sessions, then closes itself after a choice. It is
-# deliberately NOT exec'd, so leaving it returns to zsh rather than dropping
-# the NetBird SSH connection.
+# Why: running a multiplexer inside an existing one produces confusing nested
+# sessions that are hard to exit. This prevents auto-starting tmux when already
+# inside one.
+#
+# The guards, in order:
+#   $- == *i*             interactive only (not scp/rsync/sftp transfers)
+#   -t 0 && -t 1         both input and output are terminals
+#   -z ${TMUX}            not already inside tmux
+#   -z ${DOT_NO_AUTOMUX}  opt out when set in the shell environment
+#   -z ${SSH_ORIGINAL_COMMAND}
+#                         a forced command (VS Code Remote, `ssh host cmd`,
+#                         editor and agent remotes) must not be hijacked into
+#                         a session — it will hang or garble its protocol
+#
+# Grouped-session parity: TMUX_CLIENT_NAME (set per device) attaches a named
+# client session to the shared "work" session's windows via tmux grouping
+# (new-session -t work), so per-device sessions keep their own view/state
+# while sharing the panes.
 # ============================================================================
-# Each guard logs its verdict to a debug file (bounded, one line per login)
-# so a skipped auto-open can be diagnosed from the client side later. Toggle
-# the whole block off with DOT_NO_AUTOMUX.
-_automux_dbg="${HOME}/.cache/dot-automux-debug.log"
-_automux_why=""
-if [[ $- != *i* ]]; then
-    _automux_why="non-interactive"
-elif [[ ! -t 0 ]]; then
-    _automux_why="stdin-not-tty"
-elif [[ ! -t 1 ]]; then
-    _automux_why="stdout-not-tty"
-elif [[ -n "${TMUX:-}" ]]; then
-    _automux_why="inside-tmux"
-elif [[ -n "${ZELLIJ:-}" ]]; then
-    _automux_why="inside-zellij"
-elif [[ -n "${DOT_NO_AUTOMUX:-}" ]]; then
-    _automux_why="DOT_NO_AUTOMUX-set"
-elif [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    _automux_why="SSH_ORIGINAL_COMMAND-set"
-elif ! command -v zellij >/dev/null 2>&1; then
-    _automux_why="zellij-not-on-PATH"
-fi
-if [[ -n "${_automux_why}" ]]; then
-    [[ -d "${HOME}/.cache" ]] && print -r -- "$(date '+%F %T') skip: ${_automux_why} (tty0:$([[ -t 0 ]] && echo y || echo n) tty1:$([[ -t 1 ]] && echo y || echo n) sso:${SSH_ORIGINAL_COMMAND:-none})" >> "${_automux_dbg}" 2>/dev/null
-    unset _automux_dbg _automux_why
-else
-    unset _automux_dbg _automux_why
-    zellij --new-session-with-layout welcome
+if [[ $- == *i* ]] && [[ -t 0 && -t 1 ]] && [[ -z "${TMUX:-}" ]] \
+    && [[ -z "${DOT_NO_AUTOMUX:-}" ]] && [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
+    if [[ -d "${HOME}/.config/tmux" && "$(command -v tmux)" ]]; then
+        if [[ -n "${TMUX_CLIENT_NAME:-}" ]] && [[ "${TMUX_CLIENT_NAME}" != work ]] \
+            && tmux has-session -t work 2>/dev/null; then
+            exec tmux new-session -A -s "${TMUX_CLIENT_NAME}" -t work
+        elif tmux has-session 2>/dev/null; then
+            exec tmux attach-session
+        else
+            exec tmux new-session -s work
+        fi
+    fi
 fi
 
 # ============================================================================
@@ -292,8 +290,8 @@ fi
 # --disable-up-arrow keeps up/down reserved for zsh-history-substring-search.
 # The binary is owned by Home Manager/Nix on every host, so test for the
 # command rather than the legacy ~/.atuin installer path.
-# The popup backend is a tmux-only compatibility path. Keep it unset in Zellij
-# and ordinary shells, where Atuin uses its normal in-terminal UI.
+# The popup backend is a tmux-only compatibility path. Ordinary shells use
+# Atuin's normal in-terminal UI.
 if (( $+commands[atuin] )); then
     eval "$(atuin init zsh --disable-up-arrow)"
     [[ -n "${TMUX:-}" ]] && export ATUIN_TMUX_POPUP=true
@@ -302,25 +300,6 @@ fi
 # zoxide (smart directory jumper, replaces z)
 if command -v zoxide 2>/dev/null 1>&2; then
     eval "$(zoxide init zsh)"
-fi
-
-# shellfish (if installed) - only for interactive shells
-if [[ $- == *i* ]] && [[ -f "${HOME}/.shellfishrc" ]]; then
-    # When inside tmux, SSH_TTY points to the parent SSH session's tty
-    # which is not writable from tmux panes, causing "permission denied" errors.
-    # Unset it so shellfish falls back to stdout instead.
-    if [[ -n "${TMUX}" ]]; then
-        unset SSH_TTY
-    fi
-    source "${HOME}/.shellfishrc"
-    # Suppress "Standard output is not tty" errors from ios_sequence
-    # by renaming the original function and creating a silent wrapper
-    if typeset -f ios_sequence >/dev/null 2>&1; then
-        functions[_ios_sequence_orig]=$functions[ios_sequence]
-        ios_sequence() {
-            _ios_sequence_orig "$@" 2>/dev/null
-        }
-    fi
 fi
 
 # ============================================================================
@@ -351,21 +330,21 @@ if command -v oh-my-posh 2>/dev/null 1>&2; then
 fi
 
 # ============================================================================
-# Zellij semantic prompt integration (OSC 133)
+# Terminal semantic prompt integration (OSC 133)
 # ============================================================================
 # Mark prompt, typed-command, command-output, and command completion boundaries
-# for Zellij 0.45+. This enables prompt-wise scrollback navigation, selecting a
-# command plus its output, copying the latest command output, and failed-command
-# markers. The escape sequences are metadata only; they do not change commands.
-_zellij_osc133_precmd() {
+# for terminals that support OSC 133. These allow terminals to navigate and
+# select command output and display failed-command markers. The escape
+# sequences are metadata only; they do not change commands.
+_dot_osc133_precmd() {
     local exit_status=$?
     printf '\e]133;D;%d\a\e]133;A\a' "$exit_status"
 }
-_zellij_osc133_preexec() {
+_dot_osc133_preexec() {
     printf '\e]133;C\a'
 }
-add-zsh-hook precmd _zellij_osc133_precmd
-add-zsh-hook preexec _zellij_osc133_preexec
+add-zsh-hook precmd _dot_osc133_precmd
+add-zsh-hook preexec _dot_osc133_preexec
 
 # ============================================================================
 # VI-MODE CURSOR SHAPE

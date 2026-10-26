@@ -326,7 +326,7 @@ wizard_confirm_install() {
 }
 
 wizard_install_nix() {
-    local installer_file installer_status
+    local installer_dir installer_file installer_url installer_status assessment team_id
 
     printf '%s\n' "  Nix is not installed. The Determinate installer will be downloaded."
     if ! wizard_confirm_install; then
@@ -338,44 +338,62 @@ wizard_install_nix() {
         return 1
     fi
 
-    installer_file="$(wizard_temp_file)"
+    installer_dir="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-nix.XXXXXX")"
+    if [ "${wizard_os}" = Darwin ]; then
+        installer_file="${installer_dir}/Determinate.pkg"
+        installer_url="https://install.determinate.systems/determinate-pkg/stable/Universal"
+    else
+        installer_file="${installer_dir}/install.sh"
+        installer_url="https://install.determinate.systems/nix"
+    fi
     if ! curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-        "https://install.determinate.systems/nix" --output "${installer_file}"; then
-        rm -f "${installer_file}"
+        "${installer_url}" --output "${installer_file}"; then
+        rm -rf "${installer_dir}"
         printf '%s\n' "Nix installer download failed." >&2
         return 1
     fi
     if [ ! -s "${installer_file}" ]; then
-        rm -f "${installer_file}"
+        rm -rf "${installer_dir}"
         printf '%s\n' "Nix installer download was empty." >&2
         return 1
     fi
 
-    # Download and execution are separate commands so a successful `sh` cannot
-    # mask a failed curl pipeline. The installer receives no caller `-E` env.
-    if [ "${wizard_os}" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
-        if wizard_run_root /bin/sh "${installer_file}" install --no-confirm; then
+    if [ "${wizard_os}" = Darwin ]; then
+        # Follow Determinate's package deployment guide: Gatekeeper must accept
+        # the package and its Developer ID must belong to Determinate Systems.
+        if ! assessment="$(spctl -a -vv -t install "${installer_file}" 2>&1)"; then
+            printf '%s\n' "Determinate.pkg signature assessment failed:" "${assessment}" >&2
+            rm -rf "${installer_dir}"
+            return 1
+        fi
+        team_id="$(printf '%s\n' "${assessment}" | awk -F '(' '/^origin=/ {print $NF}' | tr -d ')')"
+        if [ "${team_id}" != X3JQ4VPJZ6 ]; then
+            printf '%s\n' "Determinate.pkg signing team did not match X3JQ4VPJZ6; refusing installation." >&2
+            rm -rf "${installer_dir}"
+            return 1
+        fi
+        if wizard_run_root /usr/sbin/installer -pkg "${installer_file}" -target /; then
             installer_status=0
         else
             installer_status=$?
         fi
     else
-        if /bin/sh "${installer_file}" install --no-confirm; then
+        # Download and execution stay separate so a successful shell cannot
+        # mask a failed download. Do not preserve caller environment with sudo -E.
+        if wizard_run_root /bin/sh "${installer_file}" install --no-confirm; then
             installer_status=0
         else
             installer_status=$?
         fi
     fi
-    rm -f "${installer_file}"
+    rm -rf "${installer_dir}"
 
     if [ "${installer_status}" -ne 0 ]; then
         printf '%s\n' "Nix installer failed (status ${installer_status})." >&2
         return "${installer_status}"
     fi
 
-    # Make the newly installed binary available in this shell if the installer
-    # created the standard profile. If it did not, the refresh below gives a
-    # clear failure rather than silently continuing without Nix.
+    # Find the standard profile without relying on a new login shell.
     if [ -f "${wizard_profile_bin}/../etc/profile.d/nix-daemon.sh" ]; then
         # shellcheck disable=SC1091
         . "${wizard_profile_bin}/../etc/profile.d/nix-daemon.sh"

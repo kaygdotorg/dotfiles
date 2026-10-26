@@ -18,7 +18,7 @@ in
       oh-my-posh
       zoxide
       atuin
-      zellij
+      tmux
 
       # file / text tools
       bat
@@ -63,9 +63,6 @@ in
       # (meta.platforms = linux only).
     ]
     ++ [ (if isDarwin then pkgs.ghostty-bin.terminfo else pkgs.ghostty.terminfo) ]
-    # console-only emacs on every platform: the terminal is the interface.
-    # emacs-nox exists on both linux and darwin in nixpkgs-unstable.
-    ++ [ pkgs.emacs-nox ]
     # code-review-graph comes from llm-agents (not nixpkgs) and is cached by
     # Numtide for aarch64-darwin, x86_64-linux and aarch64-linux, so it
     # installs without a local build. rtk is in nixpkgs and listed above.

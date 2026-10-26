@@ -95,7 +95,27 @@ EOF
     cat > "${destination}/sudo" <<'EOF'
 #!/usr/bin/env bash
 printf 'sudo %s\n' "$*" >> "${FAKE_SUDO_LOG}"
+if [ "${1:-}" = /usr/sbin/installer ]; then
+    shift
+    exec "$(dirname "$0")/installer" "$@"
+fi
 exec "$@"
+EOF
+
+    cat > "${destination}/spctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_PKG_ASSESS_LOG}"
+printf 'origin=Developer ID Installer: Determinate Systems, Inc. (%s)\n' "${FAKE_PKG_TEAM:-X3JQ4VPJZ6}" >&2
+exit "${FAKE_PKG_ASSESS_STATUS:-0}"
+EOF
+
+    cat > "${destination}/installer" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "${FAKE_PKG_INSTALL_LOG}"
+[ "${FAKE_PKG_INSTALL_STATUS:-0}" = 0 ] || exit "${FAKE_PKG_INSTALL_STATUS}"
+mkdir -p "${DOT_NIX_PROFILE_BIN}"
+cp "${FAKE_NIX_SOURCE}" "${DOT_NIX_PROFILE_BIN}/nix"
 EOF
 
     cat > "${destination}/curl" <<'EOF'
@@ -113,7 +133,17 @@ for argument in "$@"; do
     previous="${argument}"
 done
 if [ -n "${output}" ]; then
-    printf '%s\n' '# fake installer' > "${output}"
+    if [ "${FAKE_CURL_EMPTY:-0}" = 1 ]; then
+        : > "${output}"
+    else
+        cat > "${output}" <<'INSTALL'
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "${FAKE_LINUX_INSTALL_LOG}"
+mkdir -p "${DOT_NIX_PROFILE_BIN}"
+cp "${FAKE_NIX_SOURCE}" "${DOT_NIX_PROFILE_BIN}/nix"
+INSTALL
+    fi
 fi
 EOF
 
@@ -179,6 +209,14 @@ run_bootstrap() {
     FAKE_SYSTEMCTL_LOADED="${FAKE_SYSTEMCTL_LOADED:-0}" \
     FAKE_SYSTEMCTL_RESTART_STATUS="${FAKE_SYSTEMCTL_RESTART_STATUS:-0}" \
     FAKE_CURL_STATUS="${FAKE_CURL_STATUS:-0}" \
+    FAKE_CURL_EMPTY="${FAKE_CURL_EMPTY:-0}" \
+    FAKE_NIX_SOURCE="${fake_repo}/../nix-template" \
+    FAKE_PKG_ASSESS_LOG="${fake_home}/pkg-assess.log" \
+    FAKE_PKG_INSTALL_LOG="${fake_home}/pkg-install.log" \
+    FAKE_LINUX_INSTALL_LOG="${fake_home}/linux-install.log" \
+    FAKE_PKG_TEAM="${FAKE_PKG_TEAM:-X3JQ4VPJZ6}" \
+    FAKE_PKG_ASSESS_STATUS="${FAKE_PKG_ASSESS_STATUS:-0}" \
+    FAKE_PKG_INSTALL_STATUS="${FAKE_PKG_INSTALL_STATUS:-0}" \
     /bin/bash "${fake_repo}/scripts/bootstrap-fixture" "$@"
 }
 
@@ -192,8 +230,13 @@ new_case() {
     FAKE_SYSTEMCTL_LOADED=0
     FAKE_SYSTEMCTL_RESTART_STATUS=0
     FAKE_CURL_STATUS=0
+    FAKE_CURL_EMPTY=0
+    FAKE_PKG_TEAM=X3JQ4VPJZ6
+    FAKE_PKG_ASSESS_STATUS=0
+    FAKE_PKG_INSTALL_STATUS=0
     make_fake_repo "${CASE_ROOT}/repo"
     make_fake_bin "${CASE_ROOT}/bin"
+    cp "${CASE_ROOT}/bin/nix" "${CASE_ROOT}/nix-template"
 }
 
 # Existing Nix is convergent: setup links the updater, applies/checks the
@@ -343,6 +386,48 @@ if run_bootstrap "${CASE_ROOT}/repo" "${CASE_ROOT}/home" "${CASE_ROOT}/etc/nix" 
 fi
 assert_file_contains 'download failed' "${CASE_ROOT}/output"
 [ ! -e "${CASE_ROOT}/home/helper.log" ] || fail 'updater ran after failed download'
+
+# macOS installs the signed .pkg, then continues with the newly installed Nix.
+new_case darwin-pkg
+rm -f "${CASE_ROOT}/bin/nix"
+run_bootstrap "${CASE_ROOT}/repo" "${CASE_ROOT}/home" "${CASE_ROOT}/etc/nix" "${CASE_ROOT}/bin" --yes > "${CASE_ROOT}/output"
+assert_file_contains 'https://install.determinate.systems/determinate-pkg/stable/Universal' "${CASE_ROOT}/home/curl.log"
+assert_file_contains '/usr/sbin/installer -pkg ' "${CASE_ROOT}/home/sudo.log"
+assert_file_contains 'Determinate.pkg -target /' "${CASE_ROOT}/home/pkg-install.log"
+assert_file_contains --setup "${CASE_ROOT}/home/helper.log"
+[ ! -e "${CASE_ROOT}/home/linux-install.log" ] || fail 'macOS executed shell installer'
+
+# Reject packages that fail assessment, have another signing team, or are empty.
+for failure in assess team empty install; do
+    new_case "darwin-pkg-${failure}"
+    rm -f "${CASE_ROOT}/bin/nix"
+    case "${failure}" in
+        assess) FAKE_PKG_ASSESS_STATUS=1 ;;
+        team) FAKE_PKG_TEAM=WRONGTEAM ;;
+        empty) FAKE_CURL_EMPTY=1 ;;
+        install) FAKE_PKG_INSTALL_STATUS=7 ;;
+    esac
+    if run_bootstrap "${CASE_ROOT}/repo" "${CASE_ROOT}/home" "${CASE_ROOT}/etc/nix" "${CASE_ROOT}/bin" --yes > "${CASE_ROOT}/output" 2>&1; then
+        fail "macOS package ${failure} failure unexpectedly succeeded"
+    fi
+    [ ! -e "${CASE_ROOT}/home/helper.log" ] || fail 'updater ran after package failure'
+    [ ! -e "${CASE_ROOT}/etc/nix" ] || fail 'package failure changed cache configuration'
+    if [ "${failure}" != install ]; then
+        [ ! -e "${CASE_ROOT}/home/pkg-install.log" ] || fail 'invalid package reached installer'
+    fi
+done
+
+# Linux keeps the downloaded shell installer, including non-interactive consent.
+new_case linux-install
+FAKE_UNAME_S=Linux
+FAKE_UNAME_M=x86_64
+rm -f "${CASE_ROOT}/bin/nix"
+run_bootstrap "${CASE_ROOT}/repo" "${CASE_ROOT}/home" "${CASE_ROOT}/etc/nix" "${CASE_ROOT}/bin" --yes > "${CASE_ROOT}/output"
+assert_file_contains 'https://install.determinate.systems/nix ' "${CASE_ROOT}/home/curl.log"
+assert_file_contains 'install --no-confirm' "${CASE_ROOT}/home/linux-install.log"
+assert_file_contains --setup "${CASE_ROOT}/home/helper.log"
+[ ! -e "${CASE_ROOT}/home/pkg-assess.log" ] || fail 'Linux assessed macOS package'
+[ ! -e "${CASE_ROOT}/home/pkg-install.log" ] || fail 'Linux ran macOS package installer'
 
 # Unsupported hosts fail before any prompt or mutation.
 new_case unsupported

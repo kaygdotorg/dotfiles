@@ -63,7 +63,7 @@ class DotPathTests(unittest.TestCase):
         )
         result = subprocess.run(
             [
-                "/bin/zsh",
+                shutil.which("zsh") or "/bin/zsh",
                 "-dfc",
                 'OSTYPE="$DOT_TEST_OSTYPE"; source "$DOT_TEST_ZSHRC"',
             ],

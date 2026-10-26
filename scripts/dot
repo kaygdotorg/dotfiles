@@ -11,7 +11,7 @@ set -o errexit
 set -o nounset
 
 usage() {
-    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|zellij|doom|atuin|ssh|ghostty|karabiner|nix> [nix-options]"
+    printf '%s\n' "Usage: $(basename "$0") <setup|update> <dot|zsh|tmux|atuin|ssh|ghostty|karabiner|nix> [nix-options]"
 }
 
 # check_if_installed(): a wrapper for `command -v` that silences the output and
@@ -138,178 +138,45 @@ update_dot() {
     fi
 }
 
-# zellij
-# Linking: zellij/config.kdl      → ~/.config/zellij/config.kdl
-#          zellij/layouts/kayg.kdl → ~/.config/zellij/layouts/kayg.kdl
-# Downloading: hash-pinned releases named in zellij/plugins.lock →
-#              ~/.config/zellij/plugins/
-#
-# Zellij itself is a user package owned by Home Manager/Nix. This script owns
-# only dotfiles and explicitly approved plugin artifacts.
-zellij_src="${repo_path}/zellij"
-zellij_dest="${HOME}/.config/zellij"
+# tmux
+# Linking: tmux/.tmux.conf     → ~/.config/tmux/tmux.conf
+#          tmux/cheatsheet.sh  → ~/.config/tmux/cheatsheet.sh
+#          tmux/client-tune.sh → ~/.config/tmux/client-tune.sh
+#          tmux/session-picker.py → ~/.config/tmux/session-picker.py
+#          tpm cloned into       ~/.config/tmux/plugins/tpm
+tmux_src="${repo_path}/tmux"
 
-sha256_file() {
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "${1}" | awk '{print $1}'
-    elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "${1}" | awk '{print $1}'
-    else
-        printf '%s\n' "Missing checksum command (sha256sum or shasum)."
-        exit 1
-    fi
-}
+setup_tmux() {
+    printf '%s' "Creating tmux configuration directory"
+    run_cmd mkdir -p "${HOME}/.config/tmux"
 
-escape_kdl_string() {
-    local value="${1}"
+    backup_if_real "${HOME}/.config/tmux/tmux.conf"
 
-    # KDL string escaping is separate from sed replacement escaping. Keep the
-    # path valid when HOME contains a backslash, quote, or control character.
-    value="${value//\\/\\\\}"
-    value="${value//\"/\\\"}"
-    value="${value//$'\n'/\\n}"
-    value="${value//$'\r'/\\r}"
-    value="${value//$'\t'/\\t}"
-    value="${value//$'\b'/\\b}"
-    value="${value//$'\f'/\\f}"
-    printf '%s' "${value}"
-}
+    printf '%s' "Linking tmux configuration"
+    run_cmd ln -sf "${tmux_src}/.tmux.conf" "${HOME}/.config/tmux/tmux.conf"
 
-validate_zellij_config() {
-    local config_path="${1}"
-    local capture
+    # helper scripts the config shells out to (cheatsheet popup, per-client
+    # tuning on attach)
+    for helper in cheatsheet.sh client-tune.sh session-picker.py; do
+        backup_if_real "${HOME}/.config/tmux/${helper}"
 
-    capture="$(mktemp)"
-    if zellij --config "${config_path}" --config-dir "${zellij_src}" setup --check >"${capture}" 2>&1; then
-        save_log "${capture}"
-        rm -f "${capture}"
-        return 0
-    fi
-
-    printf '%s\n' "Zellij rejected rendered config ${config_path}:" >&2
-    sed 's/^/  | /' "${capture}" >&2
-    save_log "${capture}"
-    rm -f "${capture}"
-    return 1
-}
-
-install_locked_zellij_plugins() {
-    lockfile="${zellij_src}/plugins.lock"
-    plugins_dest="${zellij_dest}/plugins"
-
-    [ -r "${lockfile}" ] || { printf '%s\n' "Missing ${lockfile}"; exit 1; }
-    printf '%s' "Creating Zellij plugin directory"
-    run_cmd mkdir -p "${plugins_dest}"
-
-    while IFS='|' read -r filename version url expected_sha; do
-        case "${filename}" in ''|\#*) continue ;; esac
-        # an explicit if, so shellcheck's SC2015 A&&B||C hint does not apply
-        if [ -z "${version}" ] || [ -z "${url}" ] || [ -z "${expected_sha}" ]; then
-            printf '%s\n' "Malformed plugin lock entry for ${filename}"
-            exit 1
-        fi
-        destination="${plugins_dest}/${filename}"
-        if [ -f "${destination}" ] && [ ! -L "${destination}" ] && \
-            [ "$(sha256_file "${destination}")" = "${expected_sha}" ]; then
-            printf '%s\n' "Pinned ${filename} ${version} already verified"
-            continue
-        fi
-        temporary="$(mktemp "${destination}.tmp.XXXXXX")"
-        printf '%s' "Downloading pinned ${filename} ${version}"
-        if curl --fail --location --silent --show-error "${url}" -o "${temporary}" \
-            && [ "$(sha256_file "${temporary}")" = "${expected_sha}" ]; then
-            # A directory (or a symlink to one) is not a valid plugin artifact.
-            # Move real directories aside and remove links themselves before
-            # the final rename, otherwise mv may place the temporary inside it
-            # and still return success.
-            backup_if_real "${destination}"
-            run_cmd mv "${temporary}" "${destination}"
-            if [ ! -f "${destination}" ] || [ -L "${destination}" ] || \
-                [ "$(sha256_file "${destination}")" != "${expected_sha}" ]; then
-                printf '%s\n' "Pinned plugin ${destination} was not installed as the expected regular file."
-                exit 1
-            fi
-        else
-            rm -f "${temporary}"
-            printf '%s\n' " failed checksum or download for ${filename}"
-            exit 1
-        fi
-    done < "${lockfile}"
-}
-
-render_zellij_config() {
-    local destination="${1}"
-    local rendered kdl_home escaped_home
-
-    # Keep the temporary beside the destination so the final rename is atomic
-    # even when /tmp and the user's config directory are different filesystems.
-    rendered="$(mktemp "${destination}.tmp.XXXXXX")"
-
-    # HOME is inserted into a KDL string through a sed replacement. Escape the
-    # KDL value first, then escape sed replacement metacharacters (including
-    # the chosen `|` delimiter).
-    kdl_home="$(escape_kdl_string "${HOME}")"
-    escaped_home="$(printf '%s' "${kdl_home}" | sed 's/[\\&|]/\\&/g')"
-    if ! sed "s|@@HOME@@|${escaped_home}|g" "${zellij_src}/config.kdl" > "${rendered}"; then
-        rm -f "${rendered}"
-        printf '%s\n' "Unable to render config.kdl. Check template placeholders."
-        exit 1
-    fi
-
-    if ! validate_zellij_config "${rendered}"; then
-        rm -f "${rendered}"
-        printf '%s\n' "Rendered Zellij config was not installed; the existing config is unchanged." >&2
-        exit 1
-    fi
-
-    # A generated config is already managed content. Only a different regular
-    # file is treated as user content and moved aside before replacement.
-    if [ -f "${destination}" ] && cmp -s "${rendered}" "${destination}"; then
-        rm -f "${rendered}"
-        printf '%s\n' "Zellij config already current"
-        return 0
-    fi
-    backup_if_real "${destination}"
-
-    printf '%s' "Installing rendered Zellij config"
-    run_cmd mv "${rendered}" "${destination}"
-}
-
-setup_zellij() {
-    check_if_installed_and_exit zellij
-    check_if_installed_and_exit curl
-    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
-        printf '%s\n' "Missing checksum command: install sha256sum or shasum."
-        exit 1
-    fi
-
-    printf '%s' "Creating Zellij configuration directories"
-    run_cmd mkdir -p "${zellij_dest}/layouts"
-
-    for source in config.kdl layouts/kayg.kdl; do
-        destination="${zellij_dest}/${source}"
-        if [ "${source}" = "config.kdl" ]; then
-            printf '%s' "Rendering Zellij ${source} for ${HOME}"
-            render_zellij_config "${destination}"
-        else
-            backup_if_real "${destination}"
-            printf '%s' "Linking Zellij ${source}"
-            run_cmd ln -sf "${zellij_src}/${source}" "${destination}"
-        fi
+        printf '%s' "Linking tmux ${helper}"
+        run_cmd ln -sf "${tmux_src}/${helper}" "${HOME}/.config/tmux/${helper}"
     done
 
-    install_locked_zellij_plugins
+    if [ -d "${HOME}/.config/tmux/plugins/tpm" ]; then
+        printf 'Installing tpm (tmux plugin manager) skipped (already exists: %s)\n' "${HOME}/.config/tmux/plugins/tpm"
+    else
+        printf '%s' "Creating tmux plugins directory"
+        run_cmd mkdir -p "${HOME}/.config/tmux/plugins"
 
-    printf '%s' "Checking Zellij configuration"
-    run_cmd zellij --config "${zellij_dest}/config.kdl" setup --check
+        printf '%s' "Installing tpm (tmux plugin manager)"
+        run_cmd git clone "https://github.com/tmux-plugins/tpm" "${HOME}/.config/tmux/plugins/tpm"
+    fi
 }
 
-update_zellij() {
-    # Updates deliberately do not fetch a moving 'latest' release. A reviewer
-    # must update plugins.lock (version, URL, and hash) first; setup then
-    # converges every machine onto those approved bytes.
-    setup_zellij
-    printf '%s\n' "Zellij plugins are already at the reviewed versions in plugins.lock."
+update_tmux() {
+    printf '%s\n' "No framework to update. Use prefix + U to update plugins."
 }
 
 # zsh
@@ -482,161 +349,6 @@ update_atuin() {
     setup_atuin
 }
 
-# doom
-# Framework: ~/.config/emacs  (cloned from doomemacs/doomemacs, upstream default)
-# DOOMDIR:   ~/.config/doom   (user config; `doom install` deploys the default
-#            set there on first run)
-#
-# Emacs is a user package owned by Home Manager/Nix. The Doom CLI lives in the
-# framework tree (~/.config/emacs/bin/doom).
-doom_framework="${HOME}/.config/emacs"
-doom_src="${repo_path}/doom-emacs"
-doom_dest="${HOME}/.config/doom"
-
-run_doom() {
-    local doom_cli_path="${1}"
-    shift
-
-    # Doom's global --force suppresses prompts while run_cmd captures output,
-    # and these variables keep install/sync aligned with the overlay paths.
-    DOOMDIR="${doom_dest}" EMACSDIR="${doom_framework}" \
-        run_cmd "${doom_cli_path}" --force "$@"
-}
-
-install_doom_file() {
-    local source="${1}"
-    local destination="${2}"
-    local filename
-    filename="$(basename "${source}")"
-
-    if [ -f "${destination}" ] && cmp -s "${source}" "${destination}"; then
-        printf '%s\n' "Doom ${filename} already current"
-        return 0
-    fi
-
-    # Preserve a real file before replacing it. Symlinks are managed pointers;
-    # remove a divergent one so cp cannot follow it into an unrelated target.
-    if [ -e "${destination}" ] && [ ! -L "${destination}" ]; then
-        backup_if_real "${destination}"
-    elif [ -L "${destination}" ]; then
-        printf '%s' "Removing divergent Doom ${filename} symlink"
-        run_cmd rm -f "${destination}"
-    fi
-
-    printf '%s' "Installing Doom ${filename}"
-    run_cmd cp -p "${source}" "${destination}"
-}
-
-overlay_doom_files() {
-    local source_dir="${1}"
-    local filename
-
-    for filename in init.el config.el packages.el; do
-        if [ -f "${source_dir}/${filename}" ]; then
-            install_doom_file "${source_dir}/${filename}" "${doom_dest}/${filename}"
-        fi
-    done
-}
-
-overlay_doom_config() {
-    local staging archive
-
-    if [ -d "${doom_src}/.git" ]; then
-        # Archive to a file first. Wrapping `git archive` in run_cmd and piping
-        # it to tar would capture the archive bytes and pipe only " done".
-        staging="$(mktemp -d "${TMPDIR:-/tmp}/dot-doom.XXXXXX")"
-        archive="${staging}/doom-config.tar"
-        printf '%s' "Archiving tracked Doom config"
-        run_cmd git -C "${doom_src}" archive --format=tar --output="${archive}" HEAD
-        printf '%s' "Extracting tracked Doom config"
-        run_cmd tar -xf "${archive}" -C "${staging}"
-        overlay_doom_files "${staging}"
-        run_cmd rm -rf "${staging}"
-    elif [ -f "${doom_src}/init.el" ]; then
-        # Plain files tracked directly in this repository.
-        printf '%s' "Copying tracked Doom config into ${doom_dest}"
-        overlay_doom_files "${doom_src}"
-    fi
-}
-
-sync_doom_runtime() {
-    local doom_cli_path="${1}"
-
-    printf '%s' "Synchronizing Doom runtime"
-    run_doom "${doom_cli_path}" sync
-}
-
-setup_doom() {
-    check_if_installed_and_exit emacs
-    check_if_installed_and_exit git
-
-    printf '%s' "Creating ~/.config directory"
-    run_cmd mkdir -p "${HOME}/.config"
-
-    # 1. the Doom framework (upstream default location: ~/.config/emacs)
-    if [ -d "${doom_framework}/.git" ]; then
-        printf '%s\n' "Doom framework already installed at ${doom_framework}"
-    elif [ -e "${doom_framework}" ]; then
-        printf '%s\n' "Cannot install Doom: ${doom_framework} exists and is not a Doom checkout."
-        exit 1
-    else
-        printf '%s' "Cloning the Doom framework into ${doom_framework}"
-        run_cmd git clone --depth 1 https://github.com/doomemacs/doomemacs "${doom_framework}"
-    fi
-
-    doom_cli="${doom_framework}/bin/doom"
-    if [ ! -x "${doom_cli}" ] && command -v doom >/dev/null 2>&1; then
-        doom_cli="$(command -v doom)"
-    fi
-    if [ ! -x "${doom_cli}" ]; then
-        printf '%s\n' "Doom CLI not found at ${doom_framework}/bin/doom or on PATH."
-        exit 1
-    fi
-
-    # 2. install packages + deploy the default config into DOOMDIR
-    if [ -f "${doom_dest}/init.el" ]; then
-        printf '%s\n' "Doom config already deployed at ${doom_dest}"
-    else
-        # Keep this synchronous: the tracked config is overlaid immediately
-        # below, so it must wait until Doom has finished installing packages.
-        printf '%s' "Installing Doom packages (this takes a while)"
-        run_doom "${doom_cli}" install
-    fi
-
-    # 3. overlay the repo's Doom config over the deployed defaults, preserving
-    # any divergent files already present in DOOMDIR.
-    overlay_doom_config
-    sync_doom_runtime "${doom_cli}"
-}
-
-update_doom() {
-    check_if_installed_and_exit emacs
-    check_if_installed_and_exit git
-
-    if [ ! -d "${doom_framework}/.git" ]; then
-        printf '%s\n' "No Doom framework at ${doom_framework}; run 'dot setup doom' first."
-        exit 1
-    fi
-    doom_cli="${doom_framework}/bin/doom"
-    if [ ! -x "${doom_cli}" ] && command -v doom >/dev/null 2>&1; then
-        doom_cli="$(command -v doom)"
-    fi
-    if [ ! -x "${doom_cli}" ]; then
-        printf '%s\n' "Doom CLI not found at ${doom_framework}/bin/doom or on PATH."
-        exit 1
-    fi
-
-    printf '%s' "Updating the Doom framework"
-    run_cmd git -C "${doom_framework}" pull
-
-    # Overlay this repo's tracked Doom config (if any), then rebuild the runtime
-    # so package declarations such as packages.el take effect.
-    printf '%s' "Creating ${doom_dest} directory"
-    run_cmd mkdir -p "${doom_dest}"
-    overlay_doom_config
-    sync_doom_runtime "${doom_cli}"
-}
-
 # ssh
 # Linking: .ssh/config → ~/.ssh/config
 # Copying: .ssh/config.local.example → ~/.ssh/config.local  (first time only)
@@ -805,7 +517,7 @@ main() {
     esac
 
     case "${app}" in
-        dot|zsh|zellij|doom|atuin|ssh|ghostty|karabiner|nix) ;;
+        dot|zsh|tmux|atuin|ssh|ghostty|karabiner|nix) ;;
         *)
             usage
             exit 1
@@ -817,7 +529,7 @@ main() {
     # is itself the installer for the Nix package manager. ghostty is exempt
     # because macOS ships it as an app bundle, not a PATH binary.
     case "${app}" in
-        dot|doom|ghostty|karabiner|nix) ;;
+        dot|ghostty|karabiner|nix) ;;
         *) check_if_installed_and_exit "${app}" ;;
     esac
 

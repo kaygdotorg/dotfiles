@@ -18,16 +18,17 @@ jobs:
 
       - name: Install ShellCheck
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y shellcheck zsh
+        run: sudo apt-get update && sudo apt-get install -y shellcheck zsh tmux
 
       - name: Install ShellCheck on macOS
         if: runner.os == 'macOS'
-        run: brew install shellcheck
+        run: brew install shellcheck tmux
 
       - name: Lint shell scripts
         # Dynamic dispatch and sourced helpers look unused to static analysis.
         run: |
           shellcheck --shell=bash --exclude=SC2317,SC2329 scripts/dot scripts/lib/nix.sh nix/install-cache nix/nix-unstable-update nix/realize-home
+          shellcheck --shell=sh tmux/*.sh
           bash -n scripts/dot
           bash -n scripts/lib/nix.sh
           bash -n nix/nix-unstable-update
@@ -36,7 +37,7 @@ jobs:
       - name: Check command dispatch
         run: |
           status=0
-          for app in dot zsh zellij doom atuin ssh ghostty karabiner nix; do
+          for app in dot zsh tmux atuin ssh ghostty karabiner nix; do
             for action in setup update; do
               if ! grep -q "^${action}_${app}()" scripts/dot scripts/lib/nix.sh; then
                 echo "missing function: ${action}_${app}()"
@@ -46,39 +47,7 @@ jobs:
           done
           exit "$status"
 
-      - name: Install the pinned Zellij binary for parser tests
-        run: |
-          case "$(uname -s):$(uname -m)" in
-            Linux:x86_64)
-              target=x86_64-unknown-linux-musl
-              checksum=40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc
-              ;;
-            Linux:aarch64)
-              target=aarch64-unknown-linux-musl
-              checksum=05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b
-              ;;
-            Darwin:arm64)
-              target=aarch64-apple-darwin
-              checksum=c029ba4fe1927b79ad9f0cdd59155c4dff80777863c85857d4d09b88b56f9891
-              ;;
-            Darwin:x86_64)
-              target=x86_64-apple-darwin
-              checksum=8e8bea22737d1652278c51fc5c26c7c22c9855d0ebb9634a84b8873823093114
-              ;;
-            *) echo "Unsupported test platform" >&2; exit 1 ;;
-          esac
-          archive="${RUNNER_TEMP}/zellij.tar.gz"
-          curl --fail --location --silent --show-error --retry 3 \
-            "https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-${target}.tar.gz" \
-            -o "${archive}"
-          printf '%s  %s\n' "${checksum}" "${archive}" | shasum -a 256 -c -
-          mkdir -p "${RUNNER_TEMP}/dot-tools"
-          tar -xzf "${archive}" -C "${RUNNER_TEMP}/dot-tools" zellij
-          echo "${RUNNER_TEMP}/dot-tools" >> "${GITHUB_PATH}"
-
       - name: Verify bootstrap, updates, and rollback with isolated fixtures
-        env:
-          DOT_REQUIRE_ZELLIJ: '1'
         run: |
           /bin/bash scripts/tests/dot-regressions.sh
           /bin/bash tests/nix-bootstrap.sh

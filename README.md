@@ -8,21 +8,18 @@ Configuration files and a management script for a personalized development envir
 
 Clone the repository to any path you like — the `dot` script resolves its own location, so nothing depends on where it lives. The examples below use `${HOME}/.config/dotfiles`.
 
-The repository is mirrored on both GitHub and a self-hosted GitLab instance:
-
-#### GitHub (primary)
+Clone from GitHub, then add the private server as a second remote:
 
 ```bash
 git clone https://github.com/kaygdotorg/dotfiles.git "${HOME}/.config/dotfiles"
+cd "${HOME}/.config/dotfiles"
+git remote add forgejo ssh://git@o2.vpn.kayg.org:2222/kayg/dotfiles.git
 ```
 
-#### Self-hosted GitLab (mirror)
-
-```bash
-git clone https://git.kayg.org/kayg/dotfiles.git "${HOME}/.config/dotfiles"
-```
-
-Both remotes are kept in sync. Use whichever is more convenient or accessible.
+Alternatively, clone the private URL and add GitHub as a second remote. Both
+remotes should be present. SSH authentication uses `~/.ssh/github.com` and
+`~/.ssh/git.kayg.org`; the private server requires VPN access. `dot setup ssh`
+installs the corresponding host/key defaults without overwriting `config.local`.
 
 ### Setup
 
@@ -36,18 +33,59 @@ export PATH="${HOME}/.local/bin:${PATH}"
 Then set up whichever apps you need:
 
 ```bash
-dot setup nix          # reuse/install Nix, configure caches, apply this repo
+dot setup nix          # reuse existing Nix; otherwise .pkg on macOS, script on Linux
 export PATH="${HOME}/.nix-profile/bin:${PATH}"
 dot setup zsh
-dot setup zellij
-dot setup doom
+dot setup tmux
 dot setup atuin
 dot setup ssh
 dot setup ghostty      # links ~/.config/ghostty/config.ghostty for Ghostty/rootshell
 dot setup karabiner    # macOS only; open Karabiner once and create "Default profile" first
 ```
 
-Each `dot setup <app>` command creates the necessary directories and links or generates application configuration. Zellij plugins use hash-pinned artifacts from its lockfile; zsh plugins are cloned during their first setup. Repeated setup reuses existing zsh plugins and verified Zellij downloads.
+On your Mac Studio, the existing package-installed Nix is reused. No installer
+is downloaded or run. Apple Silicon Macs other than hostname `mba` select the
+`kayg` Home Manager configuration; `mba` selects `kayg-mba`. Setup currently
+requires user `kayg`, home `/Users/kayg` on macOS or `/home/kayg` on Linux, and
+Nix 2.35 or newer. Git (Apple Command Line Tools on macOS) is needed to clone.
+
+On macOS, Ghostty and Karabiner apps are separate installations. Only run
+`dot setup karabiner` after installing Karabiner and creating `Default profile`.
+After setup, open a fresh terminal. In tmux, **Ctrl+T then Shift+I** installs
+its configured plugins. Atuin authentication/sync is a separate step:
+`atuin login -u kayg`, then `atuin sync` (or register a new account if needed).
+
+### Reconcile an existing host
+
+From the existing checkout (or using its installed `dot` command):
+
+```bash
+dot update dot        # pull this repository
+dot setup dot
+dot setup nix         # apply the current lock; installs tmux, removes managed Zellij/Emacs
+export PATH="${HOME}/.nix-profile/bin:${HOME}/.local/bin:${PATH}"
+dot setup tmux
+dot setup zsh
+dot setup atuin
+dot setup ssh
+dot setup ghostty     # on hosts using Ghostty/rootshell
+# macOS with Karabiner already installed:
+dot setup karabiner
+```
+
+`setup` is intentional: it reconciles the tracked configuration without
+refreshing package versions. Use `dot update nix` separately when you want to
+refresh the flake inputs. `dot update zsh` updates shell plugins; `dot update
+tmux` explains the plugin update shortcut (Ctrl+T then Shift+U).
+
+Close or detach from Zellij before opening the new shell. Old configuration
+and Doom framework directories are preserved for manual archival. Existing
+processes keep running; applying Home Manager removes its managed packages.
+Inside an up-to-date tmux server, Ctrl+T then `r` reloads the config. A server
+started with an older tmux binary must be restarted after you finish its
+sessions to use the new binary; reload alone does not upgrade a running server.
+
+Each `dot setup <app>` command creates the necessary directories and links or generates application configuration. Zsh plugins are cloned during their first setup; repeated setup reuses existing plugins.
 
 **Division of responsibility:** Home Manager owns packages and the daily Nix updater on both macOS and Linux. `dot` deploys the remaining application configuration and bootstraps Home Manager. `dot setup nix` uses sudo only to install Nix when missing or change root-owned cache configuration. Daily package updates run as your user.
 
@@ -64,7 +102,7 @@ DOT_LOG=/tmp/dot.log dot setup zsh
 The `dot` CLI takes an action and an application. Nix setup also accepts `--yes` to authorize installing Nix when it is missing; existing installations are reused:
 
 ```bash
-dot <setup|update> <dot|zsh|zellij|doom|atuin|ssh|ghostty|karabiner|nix>
+dot <setup|update> <dot|zsh|tmux|atuin|ssh|ghostty|karabiner|nix>
 ```
 
 If arguments are missing or invalid, `dot` prints usage and exits with a non-zero status.
@@ -72,9 +110,6 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 ### Re-running setup commands
 
 - `dot setup zsh` reuses valid plugin checkouts and rejects incomplete or unrelated plugin directories before changing shell configuration. `dot update zsh` pulls plugin changes; Nix manages the Zsh support binaries.
-- `dot setup zellij` renders the tracked `config.kdl` for your home directory, links `kayg.kdl`, then downloads only the exact hash-pinned Zellij plugins listed in `zellij/plugins.lock`. A checksum mismatch aborts rather than installing unverified bytes.
-- `dot update zellij` never fetches a moving "latest" release. To upgrade a plugin, update its entry in `zellij/plugins.lock` (version, URL, sha256) after review, then rerun setup on each machine.
-- `dot setup doom` installs the Doom framework into `~/.config/emacs`, copies this repository's configuration into `~/.config/doom`, and synchronizes packages. Emacs must already be installed. Setup and update explicitly use those directories and accept Doom's installer prompts automatically. Use `doom doctor` to verify the environment.
 - `dot setup atuin` links an existing Atuin install into `~/.local/bin` and refreshes its config; the binary itself comes from Home Manager/Nix.
 - `dot setup dot`, `dot setup ssh`, `dot setup ghostty`, and `dot setup karabiner` are symlink- or generation-based and can be run repeatedly.
 - `dot setup ssh` seeds `~/.ssh/config.local` from `.ssh/config.local.example` the first time only — your machine-local hosts are never overwritten. A dangling link or directory at that path causes an error before setup changes anything.
@@ -87,9 +122,9 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 
 ## Apps
 
-- **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, OSC 133 semantic-prompt marks for Zellij, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
-- **Zellij** — Catppuccin Mocha theme, a custom bottom `zjstatus` pill bar (`kayg` layout), a background compact-bar that renders contextual mode tooltips without a persistent status row, mouse ergonomics, OSC 52 clipboard, and bounded scrollback resurrection. WASM plugins (`zjstatus`, `zellij-tabula`) are pinned by hash in `zellij/plugins.lock`.
-- **Doom Emacs** — Doom configuration copied into `~/.config/doom`; Emacs itself is a Home Manager package.
+- **tmux** — Restored Ctrl+T configuration with Catppuccin Mocha pills, vi copy mode, OSC 52 clipboard, nested-session passthrough (F12 or Alt+Shift+F), and mobile tuning. `dot setup tmux` links the configuration and installs TPM; prefix + I installs tmux-fingers.
+
+- **Zsh** — Standalone configuration with [Oh My Posh](https://ohmyposh.dev) prompt, vi-mode, lazy-loaded nvm, OSC 133 semantic-prompt marks, and plugins (autosuggestions, syntax highlighting, history substring search, completions).
 - **Atuin** — Shell history replacement with sync to a self-hosted server, replacing the default zsh history search.
 - **SSH** — Managed SSH client configuration, tuned for mobile links (keepalives, connection multiplexing), with machine-local hosts kept out of the repository in `~/.ssh/config.local`.
 - **Ghostty** — Terminal configuration (75% opaque Liquid Glass background, Maple Mono NF at 18pt, quick-terminal drop-down) linked to `~/.config/ghostty/config.ghostty`, which the macOS Ghostty app and rootshell on iOS both read. The app itself is not installed by `dot`: Ghostty ships as a signed app bundle for macOS.
@@ -100,7 +135,7 @@ If arguments are missing or invalid, `dot` prints usage and exits with a non-zer
 
 `dot setup nix` performs these steps in order:
 
-1. Detect the OS, architecture, and existing Nix executable. Install Determinate Nix only when Nix is missing. Installation requires a terminal confirmation or explicit `--yes`; a missing terminal is never treated as consent.
+1. Detect the OS, architecture, and existing Nix executable. Install Determinate Nix only when Nix is missing. On macOS, download `Determinate.pkg`, verify its Gatekeeper assessment and Determinate signing team, then run `/usr/sbin/installer` through sudo. On Linux, download and run the shell installer as separate commands. Installation requires a terminal confirmation or explicit `--yes`; a missing terminal is never treated as consent.
 2. Install the tracked `nix/cache.conf` as a root-owned `/etc/nix/dotfiles-cache.conf`. Add its include to Determinate's `/etc/nix/nix.custom.conf` (or standard Nix's `/etc/nix/nix.conf`), preserving other settings. Reload the installed daemon only when necessary. No global build settings are changed.
 3. Link `~/.local/bin/dotfiles-nix-update` to this checkout's shared updater. Apply the already locked Home Manager configuration for the host.
 4. Retire the previous updater units after successful activation. Home Manager owns the replacement launchd agent or systemd user timer.
@@ -142,15 +177,11 @@ Configuration files are stored flat under each app's directory. The `dot` script
 ├── scripts/
 │   ├── dot                  # Setup and management script (bash)
 │   └── toggle-menu-bar-visibility.applescript
+├── tmux/                   # tmux config, mobile tuning, and keybinding cheatsheet
 ├── zsh/
 │   ├── .zshenv              # Sets ZDOTDIR so zsh finds its config
 │   ├── .zshrc               # Main shell configuration
 │   └── omp.yaml             # Oh My Posh prompt theme
-├── zellij/
-│   ├── config.kdl           # Zellij configuration
-│   ├── layouts/kayg.kdl     # Custom bottom status-bar layout
-│   └── plugins.lock         # Hash-pinned Zellij plugin releases
-├── doom-emacs/              # Doom Emacs configuration (copied to ~/.config/doom)
 ├── atuin/
 │   └── config.toml          # Atuin shell history configuration
 ├── .ssh/
@@ -172,60 +203,82 @@ graph LR
         A["zsh/.zshenv"]
         B["zsh/.zshrc"]
         C["zsh/omp.yaml"]
-        D["zellij/config.kdl"]
-        D2["zellij/layouts/kayg.kdl"]
-        D3["zellij/plugins.lock"]
+        T["tmux/.tmux.conf + helpers"]
         E["atuin/config.toml"]
         F[".ssh/config"]
         F2[".ssh/config.local.example"]
         I["ghostty/config.ghostty"]
         G["karabiner-ts/index.ts"]
         H["scripts/dot"]
-        X["doom-emacs/"]
     end
 
     subgraph System
         A1["~/.zshenv"]
         B1["~/.config/zsh/.zshrc"]
         C1["~/.config/zsh/omp.yaml"]
-        D1["~/.config/zellij/config.kdl"]
-        D21["~/.config/zellij/layouts/kayg.kdl"]
-        D31["~/.config/zellij/plugins/*.wasm"]
+        T1["~/.config/tmux/"]
         E1["~/.config/atuin/config.toml"]
         F1["~/.ssh/config"]
         F21["~/.ssh/config.local"]
         I1["~/.config/ghostty/config.ghostty"]
         G1["~/.config/karabiner/karabiner.json"]
         H1["~/.local/bin/dot"]
-        X1["~/.config/doom"]
     end
 
     A -->|symlink| A1
     B -->|symlink| B1
     C -->|symlink| C1
-    D -->|render| D1
-    D2 -->|symlink| D21
-    D3 -->|hash-pinned download| D31
+    T -->|symlink| T1
     E -->|symlink| E1
     F -->|symlink| F1
     F2 -->|copy once| F21
     I -->|symlink| I1
     G -->|generates| G1
     H -->|symlink| H1
-    X -->|copy| X1
 ```
 
 > **Note:** Karabiner is the exception — its local npm dependencies are installed and `index.ts` is executed via `tsx`, which writes the profile JSON directly to `~/.config/karabiner/karabiner.json`. It is not symlinked.
 
-## Quirks
+## Shell sessions
 
-### Skipping the Zellij autostart
+Interactive terminal shells automatically attach to tmux, or create the `work`
+session when none exists. Set `TMUX_CLIENT_NAME` per device to use grouped
+sessions sharing `work`'s windows with separate session options. Nested tmux,
+non-interactive shells, shells without a terminal, and forced SSH commands skip
+automatic attachment. Set `DOT_NO_AUTOMUX=1` in the remote shell environment to
+opt out.
 
-`.zshrc` opens the Zellij session picker for interactive shells. It stays out of the way when it should: transfers (scp/rsync/sftp) are not interactive, and a forced command — VS Code Remote, `ssh host cmd`, editor and agent remotes — is skipped via `SSH_ORIGINAL_COMMAND`. To opt out by hand for one connection:
+Run `dot setup tmux` and `dot setup zsh` to deploy the configuration. Apply your
+Home Manager configuration with `dot setup nix` to install tmux and remove
+Zellij and Emacs. Existing `~/.config/zellij`, `~/.config/doom`, and
+`~/.config/emacs` directories and running sessions are left intact.
 
-```bash
-DOT_NO_AUTOMUX=1 ssh somehost
-```
+### tmux navigation
+
+The prefix is **Ctrl+T**. These features use built-in tmux commands and the
+existing fzf package; no session restoration plugin is installed.
+
+| Keys | Action |
+| --- | --- |
+| Prefix, Enter | Enter scrollback/copy mode |
+| `/` or `?` in copy mode | Incrementally search pane output forward/backward |
+| `n` / `N` in copy mode | Repeat/reverse the last search |
+| `[` / `]` in copy mode | Jump to the previous/next shell prompt (OSC 133) |
+| Prefix, `p` | Fuzzy-pick an existing session or project directory |
+| Prefix, `E` | Toggle extended keys (off by default; application opt-in, CSI u) |
+
+Copy mode shows hybrid line numbers. Its search covers pane output, while Atuin
+continues to search shell command history.
+
+The picker includes the current Git repository and immediate subdirectories of
+`~/src`, `~/code`, `~/projects`, `~/Developer`, and `~/repos`. Set
+`DOT_PROJECT_ROOTS` to a colon-separated list of alternative parent directories
+in the environment that starts tmux. Project sessions reuse a stable name based
+on the directory and its path hash. Escape cancels without creating a session.
+
+Extended keys are server-wide and remain enabled across reloads when toggled, but default
+to off on a new server. Test modified keys in each terminal and application;
+toggle them off again if a client misbehaves.
 
 ## Validation
 
